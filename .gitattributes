@@ -1,0 +1,3 @@
+# Normalize line endings: store LF in the repo, let Git handle the working-copy.
+# Keeps diffs clean for reviewers on macOS/Linux regardless of the editing OS.
+* text=auto eol=lf
