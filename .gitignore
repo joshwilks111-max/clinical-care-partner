@@ -1,0 +1,23 @@
+# Per-repo .gitignore — layers on top of ~/.config/git/ignore (the global).
+# The global already covers: secrets (.env*, *.pem, *.key, *credentials*, *secret*),
+# OS noise, editor dirs, node_modules, dist/build, Python caches, deploy state, logs.
+# Only add what's SPECIFIC to this assignment below.
+
+# -------- Assignment inputs / sensitive material --------
+# Keep the brief and any provided sample/clinical data out of git by default.
+# Un-ignore specific safe files with `!path` if you decide they should be tracked.
+/assignment/
+/brief/
+/data/
+/samples/
+*.local.md
+
+# -------- Scratch / working notes --------
+/scratch/
+/notes/
+TODO.local.md
+
+# -------- Stack-specific (fill in once chosen) --------
+# Node:   the global covers node_modules/, dist/, .next/ — usually nothing to add.
+# Python: the global covers __pycache__/, .venv/, .pytest_cache/ — usually nothing to add.
+# Add only patterns the global misses for your chosen toolchain.
