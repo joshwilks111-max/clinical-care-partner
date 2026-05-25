@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Heidi Take-Home — Implementation Plan</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1d212b; --ink:#e7e9ee; --muted:#9aa3b2;
+    --line:#2a2f3a; --accent:#5b9dff; --amber:#e8a33d; --amber-bg:#2a2113; --amber-line:#5a4416;
+    --red:#e5534b; --red-bg:#2a1514; --green:#4cc38a; --det:#7c5cff; --llm:#3fb6c4;
+    --mono:'SF Mono',ui-monospace,'Cascadia Code',Consolas,monospace;
+    --sans:Inter,'Segoe UI',system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55;font-size:15px}
+  .wrap{max-width:1100px;margin:0 auto;padding:32px 24px 96px}
+  header.top{border-bottom:1px solid var(--line);padding-bottom:20px;margin-bottom:8px}
+  h1{font-size:27px;margin:0 0 4px;letter-spacing:-.02em}
+  .sub{color:var(--muted);font-size:14px}
+  .pill{display:inline-block;font-size:11px;font-family:var(--mono);padding:2px 8px;border-radius:20px;border:1px solid var(--line);color:var(--muted);margin-right:6px}
+  .pill.locked{color:var(--green);border-color:#1f4733;background:#11241a}
+  h2{font-size:19px;margin:38px 0 6px;letter-spacing:-.01em;display:flex;align-items:center;gap:10px}
+  h2 .n{font-family:var(--mono);font-size:12px;color:var(--bg);background:var(--accent);border-radius:6px;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;flex:none}
+  h3{font-size:15px;margin:22px 0 8px;color:var(--ink)}
+  p.lead{color:var(--muted);margin:2px 0 14px;max-width:78ch}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:14px 0}
+  code,pre{font-family:var(--mono);font-size:12.5px}
+  pre{background:#0b0d12;border:1px solid var(--line);border-radius:10px;padding:14px 16px;overflow:auto;line-height:1.5}
+  .tok-k{color:#c792ea}.tok-s{color:#c3e88d}.tok-c{color:#5a6373;font-style:italic}.tok-f{color:#82aaff}.tok-n{color:#f78c6c}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+  @media(max-width:820px){.grid2,.grid3{grid-template-columns:1fr}}
+  /* flow */
+  .flow{font-family:var(--mono);font-size:12px;background:#0b0d12;border:1px solid var(--line);border-radius:10px;padding:18px}
+  .flow .judg{color:var(--llm)} .flow .exec{color:var(--det)}
+  .flow .bound{color:var(--amber);border-top:1px dashed var(--amber-line);border-bottom:1px dashed var(--amber-line);padding:6px 0;margin:8px 0;display:block;text-align:center;letter-spacing:.06em}
+  .badge{display:inline-block;font-family:var(--mono);font-size:10px;padding:1px 7px;border-radius:5px;vertical-align:middle}
+  .b-llm{background:#12333a;color:var(--llm);border:1px solid #1d4d57}
+  .b-det{background:#1e1840;color:#b3a4ff;border:1px solid #34295e}
+  .b-amber{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-line)}
+  /* mockups */
+  .screen{background:#0c0e13;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .screen .bar{background:#11141b;border-bottom:1px solid var(--line);padding:7px 12px;font-size:11px;color:var(--muted);display:flex;gap:6px;align-items:center}
+  .dot{width:9px;height:9px;border-radius:50%;background:#333}
+  .screen .body{padding:14px 16px;font-size:13px}
+  .label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:3px}
+  .safety{background:var(--amber-bg);border:1px solid var(--amber-line);border-left:3px solid var(--amber);border-radius:8px;padding:11px 13px;margin:4px 0}
+  .safety .tag{font-family:var(--mono);font-size:10px;color:var(--amber);letter-spacing:.06em}
+  .safety .hl{font-size:14px;font-weight:600;margin:3px 0}
+  .techerr{background:var(--red-bg);border:1px solid #5a1f1c;border-left:3px solid var(--red);border-radius:8px;padding:10px 12px}
+  .techerr .tag{font-family:var(--mono);font-size:10px;color:var(--red)}
+  .row{display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:1px solid #1a1d25}
+  .btn{display:inline-block;background:#1c2433;border:1px solid #2c3a52;color:#cfe0ff;border-radius:7px;padding:6px 11px;font-size:12px;margin:4px 6px 0 0}
+  .btn.primary{background:#1d3a66;border-color:#2f5da0;color:#dcebff;font-weight:600}
+  .trace{font-family:var(--mono);font-size:12px;background:#0b0d12;border:1px solid var(--line);border-radius:7px;padding:9px 11px;line-height:1.7}
+  .capped{color:var(--amber);font-weight:600}
+  .cite{border-left:2px solid #2c3a52;padding:4px 0 4px 10px;margin:5px 0;font-size:12px;color:var(--muted)}
+  .cite a{color:var(--accent);text-decoration:none}
+  .muted-pill{font-family:var(--mono);font-size:10px;color:var(--muted);background:#15181f;border:1px solid var(--line);border-radius:5px;padding:1px 6px}
+  /* timeline */
+  .tl{position:relative;margin:10px 0 0;padding-left:26px}
+  .tl::before{content:"";position:absolute;left:8px;top:4px;bottom:4px;width:2px;background:var(--line)}
+  .tl .step{position:relative;margin:0 0 14px;padding:10px 14px;background:var(--panel2);border:1px solid var(--line);border-radius:9px}
+  .tl .step::before{content:"";position:absolute;left:-22px;top:14px;width:11px;height:11px;border-radius:50%;background:var(--accent);border:2px solid var(--bg)}
+  .tl .step.d1::before{background:var(--green)}
+  .tl .step .h{font-weight:600;font-size:14px}
+  .tl .step .m{color:var(--muted);font-size:12.5px;margin-top:2px}
+  .day1{color:var(--green);font-family:var(--mono);font-size:10px;border:1px solid #1f4733;background:#11241a;border-radius:5px;padding:1px 6px;margin-left:6px}
+  /* tasks */
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th,td{text-align:left;padding:7px 9px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  .p1{color:var(--red);font-family:var(--mono);font-weight:700}
+  .p2{color:var(--amber);font-family:var(--mono)}
+  .p3{color:var(--muted);font-family:var(--mono)}
+  td .cc{font-family:var(--mono);color:var(--muted);font-size:11px}
+  .phase-tag{font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:5px;border:1px solid var(--line);color:var(--muted)}
+  .toc{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0 6px}
+  .toc a{font-size:12px;color:var(--muted);text-decoration:none;border:1px solid var(--line);border-radius:20px;padding:4px 11px}
+  .toc a:hover{color:var(--ink);border-color:var(--accent)}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin:6px 0 0}
+  .legend span b{font-weight:600}
+  .callout{background:#10202e;border:1px solid #1d3a52;border-left:3px solid var(--accent);border-radius:8px;padding:11px 14px;font-size:13.5px;margin:12px 0}
+  .gate{background:#15131f;border:1px solid #2e2747;border-left:3px solid var(--det);border-radius:8px;padding:9px 13px;margin:7px 0;font-size:13px}
+  .gate b{color:#c3b6ff}
+  footer{margin-top:50px;padding-top:16px;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <h1>Heidi Take-Home — Implementation Plan</h1>
+  <div class="sub">Clinical care-partner PoC · reviewed via <code>/autoplan</code> (CEO · Design · Eng · DX, dual voices) · scope <b>held</b></div>
+  <div style="margin-top:12px">
+    <span class="pill locked">SCOPE LOCKED</span>
+    <span class="pill">1 model · claude-opus-4-7 · temp 0</span>
+    <span class="pill">~4 days</span>
+    <span class="pill">37 tasks · 16 P1 / 16 P2 / 5 P3</span>
+    <span class="pill">submit → kieran@heidihealth.com</span>
+  </div>
+  <div class="toc">
+    <a href="#thesis">Thesis</a>
+    <a href="#flow">Architecture flow</a>
+    <a href="#states">UI states</a>
+    <a href="#contracts">Code contracts</a>
+    <a href="#sequence">Build sequence</a>
+    <a href="#tasks">Task list</a>
+    <a href="#deferred">Deferred</a>
+    <a href="#loom">Loom</a>
+  </div>
+</header>
+
+<section id="thesis">
+<h2><span class="n">★</span>The one-sentence thesis</h2>
+<p class="lead">Heidi Evidence retrieves and cites the guideline — that's <em>one step inside</em> this flow. This is the <b>care-partner layer</b> around it: build the differential, let the clinician steer, then execute safely. The moat is the differential reasoning about <b>absent</b> evidence + the deterministic safety spine — the judgment retrieval doesn't do.</p>
+<div class="callout"><b>Judgment up, execution down.</b> The LLM does the thinking (differential, choosing which dose rule). Everything that can hurt a patient — picking the guideline, doing the arithmetic — is deterministic and auditable. That boundary is the whole design, and it must be a <em>visible seam</em> in the UI, not just an architectural claim.</div>
+<div class="callout" style="background:#15131f;border-color:#2e2747;border-left-color:var(--det)"><b style="color:#c3b6ff">Interface: structured console, not a chatbot</b> (locked via /design-shotgun — see <code>mockups/</code>). Two-panel workspace: LEFT = case + confirm-weight, RIGHT = stepped Turn 1 → Turn 2 cards. The console keeps the safety spine <em>persistent</em> (a chat thread scrolls it away). A chatbot is a viable <em>future</em> interface, not foreclosed — it's the headline "if I had another day" Loom beat.</div>
+<div class="callout" style="background:#10241a;border-color:#1f4733;border-left-color:var(--green)"><b style="color:#8fe3b5">Reuse vs write</b> (verified via /last30days): <b>WRITE</b> the differential + safety spine (the moat). <b>REUSE</b> the plumbing — <b>shadcn/ui</b> base + <b>Vercel AI Elements</b> leaf components (<code>Tool</code>, <code>InlineCitation</code>, <code>Sources</code>, <code>PromptInput</code>) — but NOT its <code>Conversation</code> shell. Eval UI = <b>Promptfoo's built-in <code>promptfoo view</code></b>. Re-verify component names at the spike.</div>
+<div class="legend">
+  <span><span class="badge b-llm">LLM</span> <b>judgment</b> — model-generated</span>
+  <span><span class="badge b-det">DET</span> <b>deterministic</b> — tool / registry / code</span>
+  <span><span class="badge b-amber">SAFETY</span> <b>deliberate safety event</b> — amber, never red</span>
+</div>
+</section>
+
+<section id="flow">
+<h2><span class="n">1</span>Architecture flow</h2>
+<p class="lead">Two native round-trips with a human-in-the-loop STOP between them. A server-owned <code>CaseState</code> carries turn 1's confirmed outputs into turn 2 — turn 2 does <b>zero re-extraction</b>, so each turn is independently reproducible.</p>
+<div class="flow">
+clinician note <span class="badge b-amber">untrusted — wrapped in "treat as data" delimiters</span>
+<br><br>
+<span class="judg">— TURN 1 · DIFFERENTIAL <span class="badge b-llm">LLM</span> —</span><br>
+&nbsp;&nbsp;→ extract facts + weighted differential (positive / <b>negative</b> evidence)<br>
+&nbsp;&nbsp;→ <span class="badge b-det">DET</span> PRE-LLM gate: weight == null? → <span style="color:var(--amber)">REFUSE, no model call</span><br>
+&nbsp;&nbsp;→ render differential + guideline buttons + <b>confirm weight</b> → stream STOPS<br>
+&nbsp;&nbsp;→ clinician selects guideline + confirms weight<br>
+<span class="bound">═══ judgment ends · deterministic execution begins ═══</span>
+<span class="exec">— TURN 2 · APPLY <span class="badge b-det">DET / CONSTRAINED</span> —</span><br>
+&nbsp;&nbsp;→ <span class="badge b-det">DET</span> router: (condition, profession, setting) → guideline_id &nbsp;<span class="muted-pill">logged + audited vs confirmed condition</span><br>
+&nbsp;&nbsp;→ <span class="badge b-det">DET</span> get_guideline(id) → whole doc + DoseRule + RequiredFields<br>
+&nbsp;&nbsp;→ <span class="badge b-llm">LLM</span> classify severity vs the guideline's table → pick dose_rule_id <span style="color:var(--muted)">(rule-application, bounded)</span><br>
+&nbsp;&nbsp;→ <span class="badge b-det">DET</span> calculate_dose(guideline_id, dose_rule_id, weight_kg) → {dose_mg, dose_ml, capped...} <span style="color:var(--amber)">LLM never does math</span><br>
+&nbsp;&nbsp;→ <span class="badge b-llm">LLM</span> synthesise plan, cite verbatim <span style="color:var(--muted)">(Zod-constrained; each recommendation carries its citation)</span><br>
+&nbsp;&nbsp;→ <span class="badge b-det">DET</span> completeness gate: every RequiredFields slot present AND non-null?<br>
+&nbsp;&nbsp;→ <span class="badge b-det">DET</span> refusal gate: weight missing OR no matching guideline → ABSTAIN
+</div>
+<div class="callout">The dose tool <b>looks the rule up by id from the committed registry</b> — the LLM picks <em>which</em> rule (severity row), never <em>what it says</em>. A hallucinated or injected note structurally cannot change the cap. That closes the gap between <em>asserting</em> the trust boundary and <em>enforcing</em> it.</div>
+</section>
+
+<section id="states">
+<h2><span class="n">2</span>UI states — plain, but with hierarchy</h2>
+<p class="lead">Functional-but-plain UI. The one rule: every state uses the grammar <code>status → primary result → why/working → action → audit</code>. Deliberate safety events get <b>one amber accent</b>; red is reserved for genuine technical failures. This split protects the two Loom money-shots from reading as error pages.</p>
+
+<div class="grid2">
+  <div class="screen">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> &nbsp;Turn 1 · Differential</div>
+    <div class="body">
+      <div class="label">LLM differential <span class="badge b-llm">LLM</span></div>
+      <div class="row"><span><b>1. Croup</b> <span style="color:var(--green)">likely</span></span></div>
+      <div style="font-size:11.5px;color:var(--muted);padding:4px 0">
+        Supports: barky cough, stridor, 3yo · &nbsp;
+        <span style="color:#7c8595">Absent / not documented: drooling, high fever</span>
+      </div>
+      <div class="row"><span><b>2. Epiglottitis</b> <span style="color:var(--amber)">must-not-miss</span></span></div>
+      <div style="font-size:11.5px;color:#7c8595;padding:4px 0">Absent: drooling, toxic appearance <span class="muted-pill">[NOT MENTIONED]</span></div>
+      <div class="label" style="margin-top:10px">Select the guideline to apply →</div>
+      <span class="btn primary">Apply Starship croup</span><span class="btn">Other</span>
+      <div style="margin-top:10px;font-size:12px">Extracted weight: <b>14.2 kg</b> &nbsp;<span class="btn" style="padding:3px 9px">✓ Confirm</span><span class="btn" style="padding:3px 9px">Edit</span></div>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> &nbsp;Turn 2 · Apply (compute)</div>
+    <div class="body">
+      <div class="label">Final dose <span class="badge b-det">DET tool</span></div>
+      <div style="font-size:18px;font-weight:700;margin-bottom:6px">2.13 mg dexamethasone <span style="font-size:12px;color:var(--muted)">PO</span></div>
+      <div class="trace">14.2 kg × 0.15 mg/kg = 2.13 mg<br><span style="color:var(--muted)">cap 12 mg · under cap · capped:false</span></div>
+      <div class="cite" style="margin-top:8px"><span class="badge b-amber">SOURCE</span> Starship Croup §Dexamethasone — <a href="#">starship.org.nz…</a> <span style="color:#6b7280">v2020</span></div>
+      <div class="label" style="margin-top:8px">Completeness gate <span class="badge b-det">DET</span> <span style="color:var(--green)">passed</span></div>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> &nbsp;Refusal · the Loom opener (0:00)</div>
+    <div class="body">
+      <div class="safety">
+        <div class="tag">⚠ DELIBERATE ABSTENTION</div>
+        <div class="hl">Weight required — I won't estimate a pediatric dose from age.</div>
+        <div style="font-size:12px;color:var(--muted)">Missing: <code>weight_kg</code> · this is a pre-LLM gate (no model call, reproducible 100/100).</div>
+      </div>
+      <div style="font-size:11.5px;color:#6b7280;margin-top:8px">"The dangerous failure is the quiet one." Active amber decision — not an error.</div>
+    </div>
+  </div>
+
+  <div class="screen">
+    <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span> &nbsp;Cap-fired + Completeness-fired (4:30)</div>
+    <div class="body">
+      <div class="trace">25 kg × 0.6 mg/kg = 15 mg <span class="capped">→ CAPPED to 12 mg</span></div>
+      <div class="safety" style="margin-top:6px">
+        <div class="tag">COMPLETENESS CHECK</div>
+        <div class="hl">Plan withheld — missing: escalation_criteria</div>
+        <div style="font-size:12px;color:var(--muted)">The cited answer is faithful but incomplete — it would still hurt a patient.</div>
+      </div>
+      <div class="techerr" style="margin-top:8px">
+        <div class="tag">SYSTEM ERROR (red, distinct)</div>
+        <div style="font-size:12px">Could not reach model — retry. <span style="color:#8a9099">(technical failure ≠ clinical refusal)</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="lead" style="margin-top:14px">Streaming shows phase labels (<code>Building differential… · Calculating dose… · Checking completeness…</code>). Demo input is 1-click pre-filled (refusal / croup / cap / anaphylaxis) so the reviewer never types and the on-camera result is reproducible.</p>
+</section>
+
+<section id="contracts">
+<h2><span class="n">3</span>Code contracts (the safety spine)</h2>
+<div class="grid2">
+<div>
+<h3>The dose tool — registry owns every number</h3>
+<pre><span class="tok-c">// LLM picks WHICH rule (by id). Never what the rule says.</span>
+<span class="tok-k">function</span> <span class="tok-f">calculate_dose</span>(
+  guideline_id: <span class="tok-k">string</span>,
+  dose_rule_id: <span class="tok-k">string</span>,
+  weight_kg:    <span class="tok-k">number</span>
+): {
+  dose_mg: <span class="tok-k">number</span>; dose_ml: <span class="tok-k">number</span> | <span class="tok-k">null</span>;
+  calculation_trace: <span class="tok-k">string</span>;
+  capped: <span class="tok-k">boolean</span>; binding_limit: <span class="tok-k">number</span> | <span class="tok-k">null</span>;
+  data_gaps: <span class="tok-k">string</span>[];
+}
+<span class="tok-c">// tool reads drug/mg_per_kg/max_mg/route/</span>
+<span class="tok-c">// concentration/rounding/min_mg FROM the registry.</span>
+<span class="tok-c">// rejects an invalid dose_rule_id.</span></pre>
+</div>
+<div>
+<h3>DoseRule — the committed, version-pinned rule</h3>
+<pre><span class="tok-k">type</span> <span class="tok-f">DoseRule</span> = {
+  dose_rule_id: <span class="tok-k">string</span>;
+  drug: <span class="tok-k">string</span>; mg_per_kg: <span class="tok-k">number</span>;
+  min_mg: <span class="tok-k">number</span>|<span class="tok-k">null</span>; max_mg: <span class="tok-k">number</span>;
+  route: <span class="tok-k">string</span>; frequency: <span class="tok-k">string</span>;
+  concentration_mg_per_ml: <span class="tok-k">number</span>|<span class="tok-k">null</span>; <span class="tok-c">// mg→mL det.</span>
+  rounding: { direction:<span class="tok-s">"down"</span>|<span class="tok-s">"nearest"</span>;
+              increment_mg:<span class="tok-k">number</span> }|<span class="tok-k">null</span>; <span class="tok-c">// GUARD-8</span>
+  source_section; source_version; source_url;
+  human_verified: <span class="tok-k">boolean</span>; <span class="tok-c">// gates execution</span>
+};</pre>
+</div>
+<div>
+<h3>Structured output — makes the completeness gate real</h3>
+<pre><span class="tok-k">type</span> <span class="tok-f">PlanOutput</span> = {
+  recommendations: <span class="tok-f">Array</span>&lt;{
+    text; source_section; source_version;
+    source_url; quote;        <span class="tok-c">// citation enforced</span>
+  }&gt;;
+  required_fields: <span class="tok-f">Record</span>&lt;<span class="tok-k">string</span>, {
+    present: <span class="tok-k">boolean</span>;
+    value: <span class="tok-k">string</span> | <span class="tok-k">null</span>;  <span class="tok-c">// gate: present AND non-null</span>
+  }&gt;;                          <span class="tok-c">// "Escalation: not specified" FAILS</span>
+};</pre>
+</div>
+<div>
+<h3>CaseState — the turn-1 → turn-2 contract</h3>
+<pre><span class="tok-k">type</span> <span class="tok-f">CaseState</span> = {  <span class="tok-c">// server-owned, signed</span>
+  note_hash: <span class="tok-k">string</span>;
+  extracted_facts: <span class="tok-f">ExtractedFacts</span>;
+  differential: <span class="tok-f">Differential</span>;
+  selected_condition: <span class="tok-k">string</span>;
+  selected_guideline_id: <span class="tok-k">string</span>;
+  selected_severity: <span class="tok-k">string</span>;
+};
+<span class="tok-c">// turn 2 consumes this verbatim — zero re-extraction.</span></pre>
+</div>
+</div>
+<div class="callout"><b>Two test layers.</b> Promptfoo (6 demo cases + injection + no-guideline) exercises the LLM behaviours, asserting against <em>structured output</em> not prose. Unit tests (<code>tools/*.test.ts</code>) exercise the deterministic guards/edges (exactly-at-cap, zero/negative weight, GUARD-8 rounding, min_mg floor, Zod-fail). Run with <code>npm run eval</code> → named checks, not aggregate.</div>
+</section>
+
+<section id="sequence">
+<h2><span class="n">4</span>Build sequence</h2>
+<p class="lead">The pre-LLM refusal ships <b>day 1</b> — no SDK, no model — so the Loom opener is safe regardless of how the stack spike goes. The deterministic safety spine is built and unit-tested <em>before</em> any LLM wiring.</p>
+<div class="tl">
+  <div class="step d1"><div class="h">1 · research/ + README skeleton <span class="day1">DAY 1</span></div><div class="m">Port papers.md / clinical-facts.md / last30days.md from the citation card (P0 — already mostly written). Evidence-map README structure (9 sections).</div></div>
+  <div class="step d1"><div class="h">2 · Registry + DoseRule / RequiredFields <span class="day1">DAY 1</span></div><div class="m">2 committed, version-pinned guidelines (Starship croup, ASCIA anaphylaxis). concentration + rounding + min_mg fields. Single source of truth.</div></div>
+  <div class="step d1"><div class="h">3 · Deterministic core, NO LLM <span class="day1">DAY 1</span></div><div class="m">calculate_dose(by id) + all GUARDs + pre-LLM refusal gate + router + completeness gate. <b>Unit-test this layer first</b> — it's the safety spine. The refusal demo is shippable here.</div></div>
+  <div class="step"><div class="h">4 · 30-min stack spike (hard timebox)</div><div class="m">Turn-2-shaped call: tool + Output.object + stopWhen + one malformed call on opus-4-7. Clean → Vercel AI SDK 6. Friction → @anthropic-ai/sdk direct (fallback pre-scaffolded). Resolve the stack line in README.</div></div>
+  <div class="step"><div class="h">5 · Turn 1 + Turn 2 with CaseState</div><div class="m">Differential (judgment) → STOP → confirm weight + select guideline → apply (deterministic). Injection delimiters on the note.</div></div>
+  <div class="step"><div class="h">6 · Plain UI + state contract</div><div class="m">Amber safety accent, provenance seam (LLM/DET badges), fixed dose-trace format, 1-click demo buttons, phase labels.</div></div>
+  <div class="step"><div class="h">7 · Promptfoo (6+2) + wrong-guideline audit</div><div class="m">npm run eval, named checks, structured assertions, severity-row assertion, injection + no-guideline cases.</div></div>
+  <div class="step"><div class="h">8 · Deploy live URL → diagram → Loom</div><div class="m">Live URL primary (key server-side). One-page architecture diagram. 5–8 min Loom (lead with refusal + care-partner reframe).</div></div>
+</div>
+</section>
+
+<section id="tasks">
+<h2><span class="n">5</span>Task list — 37 tasks (16 P1 / 16 P2 / 5 P3)</h2>
+<p class="lead">Aggregated across all four review phases. CC effort ≈ 6–7 agent-hours. Checkbox as you ship. Full JSONL in <code>~/.gstack/projects/gifted-ishizaka-9363b7/</code>.</p>
+<div class="legend"><span><b class="p1">P1</b> blocks ship</span><span><b class="p2">P2</b> same branch</span><span><b class="p3">P3</b> follow-up</span></div>
+<table>
+<thead><tr><th>Pri</th><th>ID</th><th>Phase</th><th>CC</th><th>Task</th></tr></thead>
+<tbody>
+<tr><td class="p1">P1</td><td>X2</td><td><span class="phase-tag">dx</span></td><td class="cc">10m</td><td>GUARD-1 missing-weight refusal as <b>pre-LLM gate</b> (key-free, ships day 1)</td></tr>
+<tr><td class="p1">P1</td><td>E1</td><td><span class="phase-tag">eng</span></td><td class="cc">30m</td><td>calculate_dose looks rule up by id; add concentration_mg_per_ml + dose_ml</td></tr>
+<tr><td class="p1">P1</td><td>X3</td><td><span class="phase-tag">dx</span></td><td class="cc">30m</td><td>Build research/ first (port from citation card); deep-link from README</td></tr>
+<tr><td class="p1">P1</td><td>X1</td><td><span class="phase-tag">dx</span></td><td class="cc">20m</td><td>Live URL as primary path (key server-side, zero reviewer setup)</td></tr>
+<tr><td class="p1">P1</td><td>X4</td><td><span class="phase-tag">dx</span></td><td class="cc">25m</td><td>Evidence-map README (9 sections: try-in-60s → repo-map)</td></tr>
+<tr><td class="p1">P1</td><td>E3</td><td><span class="phase-tag">eng</span></td><td class="cc">20m</td><td>CaseState turn1→turn2 contract; turn-2 zero re-extraction</td></tr>
+<tr><td class="p1">P1</td><td>E4</td><td><span class="phase-tag">eng</span></td><td class="cc">15m</td><td>Completeness gate on structured non-null slots, not substring</td></tr>
+<tr><td class="p1">P1</td><td>E5</td><td><span class="phase-tag">eng</span></td><td class="cc">25m</td><td>Injection delimiters + injection eval + confirm-weight-in-UI</td></tr>
+<tr><td class="p1">P1</td><td>E2</td><td><span class="phase-tag">eng</span></td><td class="cc">15m</td><td>Assert against structured tool output, not prose regex</td></tr>
+<tr><td class="p1">P1</td><td>E13</td><td><span class="phase-tag">eng</span></td><td class="cc">30m</td><td>30-min stack spike (tool+Output.object+stopWhen+malformed); direct-SDK fallback</td></tr>
+<tr><td class="p1">P1</td><td>X5</td><td><span class="phase-tag">dx</span></td><td class="cc">20m</td><td>1-click pre-filled demo buttons; deterministic on-camera path</td></tr>
+<tr><td class="p1">P1</td><td>G1/D2</td><td><span class="phase-tag">design</span></td><td class="cc">15m</td><td>One amber safety accent (refusal/cap/no-guideline/completeness); red for tech errors</td></tr>
+<tr><td class="p1">P1</td><td>G2/D1</td><td><span class="phase-tag">design</span></td><td class="cc">20m</td><td>First-thing-visible rule per state + status→result→working→action→audit</td></tr>
+<tr><td class="p1">P1</td><td>C1</td><td><span class="phase-tag">ceo</span></td><td class="cc">15m</td><td>Lead README + Loom with the care-partner framing (differential = moat)</td></tr>
+<tr><td class="p1">P1</td><td>X11</td><td><span class="phase-tag">dx</span></td><td class="cc">20m</td><td>Scaffold shadcn/ui + AI Elements leaf components (Tool, InlineCitation, Sources) — NOT the Conversation shell</td></tr>
+<tr><td class="p1">P1</td><td>X12</td><td><span class="phase-tag">dx</span></td><td class="cc">30m</td><td>Build structured two-panel console (variant B from design-shotgun)</td></tr>
+<tr><td class="p2">P2</td><td>E8</td><td><span class="phase-tag">eng</span></td><td class="cc">20m</td><td>Wrong-guideline audit: routed id matches confirmed condition</td></tr>
+<tr><td class="p2">P2</td><td>X6</td><td><span class="phase-tag">dx</span></td><td class="cc">25m</td><td>Visual deterministic-vs-LLM seam (provenance badges per section)</td></tr>
+<tr><td class="p2">P2</td><td>E6</td><td><span class="phase-tag">eng</span></td><td class="cc">10m</td><td>GUARD-8 rounding as data {direction, increment_mg}</td></tr>
+<tr><td class="p2">P2</td><td>E7</td><td><span class="phase-tag">eng</span></td><td class="cc">10m</td><td>GUARD-7 numeric bounds + zero/neg/at-cap unit tests</td></tr>
+<tr><td class="p2">P2</td><td>E9</td><td><span class="phase-tag">eng</span></td><td class="cc">10m</td><td>Zod parse failure → red technical state; unit test</td></tr>
+<tr><td class="p2">P2</td><td>E10</td><td><span class="phase-tag">eng</span></td><td class="cc">10m</td><td>Citation schema enforcement (each recommendation cited)</td></tr>
+<tr><td class="p2">P2</td><td>E11</td><td><span class="phase-tag">eng</span></td><td class="cc">10m</td><td>Assert severity row selected (not just final dose)</td></tr>
+<tr><td class="p2">P2</td><td>X7</td><td><span class="phase-tag">dx</span></td><td class="cc">10m</td><td>npm run eval wraps promptfoo; named checks; sample green output in README</td></tr>
+<tr><td class="p2">P2</td><td>X8</td><td><span class="phase-tag">dx</span></td><td class="cc">10m</td><td>.env.example + .nvmrc/engines; fail loud on mismatch</td></tr>
+<tr><td class="p2">P2</td><td>X9</td><td><span class="phase-tag">dx</span></td><td class="cc">5m</td><td>Resolve stack line in README after the spike</td></tr>
+<tr><td class="p2">P2</td><td>C2</td><td><span class="phase-tag">ceo</span></td><td class="cc">10m</td><td>Loom: completeness guard with STAKES (drops escalation criterion)</td></tr>
+<tr><td class="p2">P2</td><td>C3</td><td><span class="phase-tag">ceo</span></td><td class="cc">5m</td><td>Label GUARDs [tested] vs [specified]</td></tr>
+<tr><td class="p2">P2</td><td>G3/D3</td><td><span class="phase-tag">design</span></td><td class="cc">10m</td><td>"Your turn" affordance + confirm-weight after Turn 1</td></tr>
+<tr><td class="p2">P2</td><td>G4/D4</td><td><span class="phase-tag">design</span></td><td class="cc">10m</td><td>Fixed dose-trace + distinct CAPPED segment</td></tr>
+<tr><td class="p3">P3</td><td>E12</td><td><span class="phase-tag">eng</span></td><td class="cc">10m</td><td>human_verified gate + min_mg floor branch (or drop both)</td></tr>
+<tr><td class="p3">P3</td><td>D5</td><td><span class="phase-tag">design</span></td><td class="cc">3m</td><td>Negative-evidence labeling ("Findings absent / not documented")</td></tr>
+<tr><td class="p3">P3</td><td>D6</td><td><span class="phase-tag">design</span></td><td class="cc">3m</td><td>Streaming phase labels (no spinner-only state)</td></tr>
+<tr><td class="p3">P3</td><td>D7</td><td><span class="phase-tag">design</span></td><td class="cc">5m</td><td>Citation as labeled quote block; pre-filled demo note</td></tr>
+<tr><td class="p3">P3</td><td>X10</td><td><span class="phase-tag">dx</span></td><td class="cc">10m</td><td>Clickable citation links to real Starship/ASCIA section</td></tr>
+</tbody>
+</table>
+</section>
+
+<section id="deferred">
+<h2><span class="n">6</span>Deliberately deferred — the depth signal</h2>
+<p class="lead">Named on purpose, each with a build-trigger. The deferred list IS the senior signal for a 4-day take-home. Full table in <code>TODOS.md</code>.</p>
+<div class="grid3">
+  <div class="panel"><b>Wrong-guideline auto-abstain</b><br><span style="color:var(--muted);font-size:12.5px">Audit assertion ships; auto-abstain behaviour deferred. The nastier failure than empty-context.</span></div>
+  <div class="panel"><b>Differential-collapse loop</b><br><span style="color:var(--muted);font-size:12.5px">Ambiguous note → discriminating question → narrow dx. The real care-partner product. Lead the "another day" beat.</span></div>
+  <div class="panel"><b>Model-tier routing</b><br><span style="color:var(--muted);font-size:12.5px">Big model judgment / light model execution. Cost-opt, unneeded at demo scale.</span></div>
+  <div class="panel"><b>Deterministic severity mapping</b><br><span style="color:var(--muted);font-size:12.5px">Encode severity criteria as typed rules. Regulatory hardening; brittle on free-text for a PoC.</span></div>
+  <div class="panel"><b>LLM-as-judge (Layer 2)</b><br><span style="color:var(--muted);font-size:12.5px">Clinically-framed applicability rubric. Hook in tests/evals; informational, never gating.</span></div>
+  <div class="panel"><b>Live-consult + scale retrieval + privacy</b><br><span style="color:var(--muted);font-size:12.5px">Transcription, agentic retrieval over a large corpus, on-prem/no-PHI. The 6-month product.</span></div>
+</div>
+</section>
+
+<section id="loom">
+<h2><span class="n">7</span>Loom (5–8 min)</h2>
+<div class="panel" style="font-size:13.5px;line-height:1.9">
+  <b>0:00</b> &nbsp;REFUSAL (weightless note, pre-LLM gate) — "the dangerous failure is the quiet one." Active amber decision, not an error.<br>
+  <b>0:45</b> &nbsp;THE MOAT — "Evidence retrieves and cites; that's one step inside this. This is the care-partner layer: weigh the differential, clinician steers, execute safely."<br>
+  <b>1:30</b> &nbsp;LIVE DEMO — Jack → 2.13 mg, show the working + negative evidence + citation. Same harness → adrenaline IM 0.14 mL.<br>
+  <b>3:00</b> &nbsp;ARCHITECTURE — judgment up / execution down; the boundary as a visible seam; the tool owns every number.<br>
+  <b>4:30</b> &nbsp;SAFETY WITH STAKES — cap-firing + "100% faithful, would still hurt a patient because it drops the escalation criterion. Faithfulness scores it perfect. My completeness check FAILS it."<br>
+  <b>6:00</b> &nbsp;"IF I HAD ANOTHER DAY" — lead with the differential-collapse loop, then the deferred list. Show your face.
+</div>
+</section>
+
+<section>
+<h2><span class="n">⚙</span>The decisions you locked (gates)</h2>
+<div class="gate"><b>Positioning</b> — care-partner layer above Evidence; differential is the moat ("Evidence is one piece of my puzzle").</div>
+<div class="gate"><b>Safety-event color</b> — one amber accent; red only for technical errors.</div>
+<div class="gate"><b>Dose tool contract</b> — tool looks the rule up by id; LLM never sets a number.</div>
+<div class="gate"><b>Injection defense</b> — delimiters + injection eval + confirm-weight-in-UI (human owns the safety-critical input).</div>
+<div class="gate"><b>Wrong-guideline</b> — add the audit assertion; keep the guard deferred.</div>
+<div class="gate"><b>Reviewer access</b> — live URL primary + pre-LLM refusal (key-free, day-1, 100/100 reproducible).</div>
+<div class="gate"><b>README + research/</b> — research/ as P0; evidence-map README.</div>
+<div class="gate"><b>Interface</b> — structured console (variant B), not a chatbot; chatbot kept as a named future option.</div>
+<div class="gate"><b>Reuse</b> — shadcn/ui + AI Elements leaf components (not the Conversation shell) + Promptfoo viewer; hand-write only the differential + safety spine.</div>
+</section>
+
+<footer>
+Reviewed via <code>/autoplan</code> · CEO (HOLD SCOPE) → Design → Eng → DX · dual voices (Codex 0.132.0 + Claude subagent) each phase · scope held, no expansion.
+Source of truth: <code>DESIGN.md</code>. Deferred work: <code>TODOS.md</code>. This page is a read-only visualization — the doc is authoritative.
+</footer>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Variant B — Structured Care-Partner Console</title>
+<style>
+  :root{
+    --bg:#eef1f6; --panel:#fff; --ink:#1a1f29; --muted:#67718a; --line:#e0e5ee; --line2:#eef1f6;
+    --accent:#1d7a8c; --accent-bg:#e8f4f6; --amber:#a36a12; --amber-bg:#fdf4e3; --amber-line:#ecd5a3;
+    --det:#5b4bbd; --det-bg:#efecfb; --llm:#157f8c; --llm-bg:#e3f3f5; --ok:#1f7a47; --ok-bg:#e3f3ea;
+    --mono:'SF Mono',ui-monospace,Consolas,monospace; --sans:Inter,'Segoe UI',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.5}
+  .hdr{background:var(--panel);border-bottom:1px solid var(--line);padding:11px 20px;display:flex;align-items:center;gap:10px}
+  .logo{width:26px;height:26px;border-radius:7px;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+  .hdr .t{font-weight:650}.hdr .s{color:var(--muted);font-size:11.5px}
+  .grid{display:grid;grid-template-columns:300px 1fr;gap:16px;max-width:1080px;margin:16px auto;padding:0 16px;align-items:start}
+  @media(max-width:780px){.grid{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .panel .ph{padding:9px 14px;border-bottom:1px solid var(--line2);font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:650;background:#fafbfd}
+  .panel .pb{padding:14px}
+  /* left: case */
+  .note{background:#fafbfd;border:1px solid var(--line2);border-radius:9px;padding:10px 12px;font-size:13px;color:#384256}
+  .facts{margin-top:12px}
+  .frow{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--line2);font-size:13px}
+  .frow:last-child{border-bottom:none}
+  .frow .k{color:var(--muted)} .frow .v{font-weight:600}
+  .confirm{background:var(--amber-bg);border:1px solid var(--amber-line);border-radius:8px;padding:8px 10px;margin-top:10px;font-size:12.5px}
+  .confirm b{color:var(--amber)}
+  .mini{font-size:11px;border:1px solid var(--accent);color:var(--accent);background:#fff;border-radius:7px;padding:3px 9px;cursor:pointer;margin-left:6px}
+  /* right: stepped */
+  .step{margin-bottom:14px}
+  .step-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .step-n{width:22px;height:22px;border-radius:6px;background:var(--accent);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex:none}
+  .step-t{font-weight:650;font-size:14px}
+  .badge{display:inline-block;font-family:var(--mono);font-size:9.5px;padding:1px 6px;border-radius:5px;vertical-align:middle}
+  .b-det{background:var(--det-bg);color:var(--det)} .b-llm{background:var(--llm-bg);color:var(--llm)} .b-src{background:var(--accent-bg);color:var(--accent)}
+  .card{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:10px}
+  .card .ct{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:7px;display:flex;justify-content:space-between;align-items:center}
+  .cond{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:8px 0;border-bottom:1px solid var(--line2)}
+  .cond:last-child{border-bottom:none}
+  .cond .nm{grid-column:1/3;font-weight:650}
+  .tag{font-size:10px;padding:1px 7px;border-radius:20px;font-weight:600;margin-left:6px}
+  .tag.likely{background:var(--ok-bg);color:var(--ok)}.tag.mnm{background:var(--amber-bg);color:var(--amber)}
+  .col-h{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .col-pos{font-size:12px;color:#2f7a4f} .col-neg{font-size:12px;color:#8a93a6}
+  .your-turn{background:var(--accent-bg);border:1px dashed var(--accent);border-radius:10px;padding:11px;margin-bottom:10px}
+  .your-turn .p{font-size:12px;color:var(--accent);font-weight:600;margin-bottom:7px}
+  .btn{background:var(--accent);color:#fff;border:none;border-radius:9px;padding:9px 14px;font-size:13px;font-weight:600;margin-right:8px;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--accent);border:1px solid var(--accent)}
+  .dose-hl{font-size:18px;font-weight:700;margin-bottom:6px}
+  .trace{font-family:var(--mono);font-size:12px;background:#0d1117;color:#d7dde7;border-radius:8px;padding:10px 12px;line-height:1.7}
+  .trace .cap{color:#e6b450;font-weight:700}
+  .cite{font-size:12px;color:#384256}
+  .cite .q{border-left:3px solid var(--accent);padding-left:9px;margin-top:4px;color:#4a5469}
+  .cite a{color:var(--accent)}
+  .safety{background:var(--amber-bg);border:1px solid var(--amber-line);border-left:3px solid #d99a2b;border-radius:9px;padding:10px 12px}
+  .safety.ok{background:var(--ok-bg);border-color:#bfe3cc;border-left-color:var(--ok)}
+  .safety .st{font-family:var(--mono);font-size:9.5px;letter-spacing:.05em;color:var(--amber)}
+  .safety.ok .st{color:var(--ok)}
+  .safety .sh{font-weight:650;font-size:13px;margin-top:2px}
+  .foot{text-align:center;font-size:10.5px;color:var(--muted);margin:14px auto;max-width:1080px}
+</style>
+</head>
+<body>
+  <div class="hdr">
+    <div class="logo">H</div>
+    <div><div class="t">Care Partner Console</div><div class="s">Clinical decision support · judgment up, execution down</div></div>
+  </div>
+
+  <div class="grid">
+    <!-- LEFT: the case -->
+    <div class="panel">
+      <div class="ph">The case</div>
+      <div class="pb">
+        <div class="note">Jack T, 3yo, 14.2 kg. Barky cough, stridor at rest, no cyanosis. ?croup.</div>
+        <div class="facts">
+          <div class="frow"><span class="k">Condition</span><span class="v">Croup (suspected)</span></div>
+          <div class="frow"><span class="k">Severity</span><span class="v">Moderate</span></div>
+          <div class="frow"><span class="k">Age</span><span class="v">3 yo</span></div>
+          <div class="frow"><span class="k">Weight</span><span class="v">14.2 kg</span></div>
+        </div>
+        <div class="confirm">
+          <b>Confirm weight</b> before dosing — the human owns the safety-critical input.
+          <div style="margin-top:7px"><button class="mini" style="padding:5px 11px;font-size:12px">✓ Confirm 14.2 kg</button><button class="mini">Edit</button></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: stepped workflow -->
+    <div>
+      <div class="step">
+        <div class="step-h"><span class="step-n">1</span><span class="step-t">Differential</span> <span class="badge b-llm">LLM judgment</span></div>
+        <div class="card">
+          <div class="cond">
+            <div class="nm">Croup <span class="tag likely">likely</span></div>
+            <div><div class="col-h">Supports</div><div class="col-pos">barky cough · stridor at rest · age 3</div></div>
+            <div><div class="col-h">Absent / not documented</div><div class="col-neg">drooling · high fever · toxic</div></div>
+          </div>
+          <div class="cond">
+            <div class="nm">Epiglottitis <span class="tag mnm">must-not-miss</span></div>
+            <div><div class="col-h">Supports</div><div class="col-pos">—</div></div>
+            <div><div class="col-h">Absent / not documented</div><div class="col-neg">drooling · tripod · muffled voice</div></div>
+          </div>
+        </div>
+        <div class="your-turn">
+          <div class="p">→ Your turn: select the guideline to apply</div>
+          <button class="btn">Apply Starship croup</button><button class="btn ghost">Other condition</button>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-h"><span class="step-n">2</span><span class="step-t">Apply</span> <span class="badge b-det">deterministic / constrained</span></div>
+
+        <div class="card">
+          <div class="ct">Dose <span class="badge b-det">TOOL · LLM never does the math</span></div>
+          <div class="dose-hl">2.13 mg dexamethasone <span style="font-size:12px;color:var(--muted);font-weight:400">PO</span></div>
+          <div class="trace">14.2 kg × 0.15 mg/kg = 2.13 mg
+<span style="color:#8a93a6">cap 12 mg · under cap · capped:false</span></div>
+        </div>
+
+        <div class="card">
+          <div class="ct">Citation <span class="badge b-src">SOURCE</span></div>
+          <div class="cite">Starship Croup §Dexamethasone dosing <span style="color:var(--muted)">v2020</span> <a href="#">starship.org.nz ↗</a>
+            <div class="q">"Dexamethasone 0.15 mg/kg PO (max 12 mg), single dose."</div>
+          </div>
+        </div>
+
+        <div class="card" style="padding:0;border:none">
+          <div class="safety ok">
+            <div class="st">✓ COMPLETENESS CHECK <span class="badge b-det">DET</span></div>
+            <div class="sh" style="color:var(--ok)">Plan complete — all required fields present</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:3px">dose ✓ · route ✓ · max cap ✓ · contraindications ✓ · escalation criteria ✓</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="foot">Variant B — Structured Care-Partner Console · the safety spine is persistent + provenance-labeled, not scrolled away</div>
+</body>
+</html>

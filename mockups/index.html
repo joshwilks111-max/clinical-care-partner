@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chatbot vs Structured — decide the interface</title>
+<style>
+  :root{
+    --bg:#0f1115;--panel:#171a21;--ink:#e7e9ee;--muted:#9aa3b2;--line:#2a2f3a;
+    --accent:#5b9dff;--amber:#e8a33d;--green:#4cc38a;--red:#e5534b;
+    --sans:Inter,'Segoe UI',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);line-height:1.55}
+  .wrap{max-width:1320px;margin:0 auto;padding:24px 20px 80px}
+  h1{font-size:24px;margin:0 0 4px;letter-spacing:-.02em}
+  .sub{color:var(--muted);font-size:14px;margin-bottom:8px}
+  .note{background:#2a2113;border:1px solid #5a4416;border-left:3px solid var(--amber);border-radius:8px;padding:9px 13px;font-size:13px;margin:12px 0 20px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  @media(max-width:1000px){.cols{grid-template-columns:1fr}}
+  .col h2{font-size:18px;margin:0 0 2px}
+  .col .vlabel{font-family:ui-monospace,monospace;font-size:11px;color:var(--muted);margin-bottom:8px}
+  .frame{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden;height:560px}
+  .frame iframe{width:100%;height:100%;border:0;display:block}
+  .open{display:inline-block;margin-top:8px;font-size:12px;color:var(--accent);text-decoration:none;border:1px solid var(--line);border-radius:20px;padding:4px 12px}
+  .args{margin-top:14px}
+  .args h3{font-size:13px;margin:0 0 6px;color:var(--ink)}
+  .args ul{margin:0;padding-left:18px}
+  .args li{font-size:13px;color:#cdd3de;margin-bottom:5px}
+  .for{color:var(--green)} .against{color:var(--amber)}
+  .verdict{background:#10202e;border:1px solid #1d3a52;border-left:3px solid var(--accent);border-radius:10px;padding:14px 16px;margin:24px 0 0;font-size:14px}
+  .verdict b{color:#cfe3ff}
+  .lean{font-weight:700;color:var(--green)}
+  table.cmp{width:100%;border-collapse:collapse;margin-top:22px;font-size:13px}
+  table.cmp th,table.cmp td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  table.cmp th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+  table.cmp td.dim{color:var(--muted);width:25%}
+  .win{color:var(--green);font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Chatbot vs Structured Console — pick the clinician's interface</h1>
+  <div class="sub">Same case in both: Jack T, 3yo, 14.2 kg, moderate croup → differential → confirm → 2.13 mg dexamethasone + citation + completeness.</div>
+  <div class="note">Hand-built HTML (AI image gen was blocked by OpenAI org verification). This is the better tool anyway — the decision is structural (interaction + layout), which static images can't show. Both frames are live and scrollable.</div>
+
+  <div class="cols">
+    <div class="col">
+      <h2>A · Clinical Chatbot</h2>
+      <div class="vlabel">conversation thread · message bubbles · ChatGPT-style</div>
+      <div class="frame"><iframe src="chatbot.html" title="Chatbot variant"></iframe></div>
+      <a class="open" href="chatbot.html" target="_blank">Open A full-screen ↗</a>
+      <div class="args">
+        <h3 class="for">✅ The case FOR chatbot</h3>
+        <ul>
+          <li>Familiar — the reviewer needs zero learning curve; meets Heidi's note-driven mental model.</li>
+          <li>Honest about the medium — it IS an LLM doing turns; chat maps onto that naturally.</li>
+          <li>Maximum reuse — AI Elements <code>Conversation/Message/Tool/InlineCitation</code> give it to you nearly free.</li>
+          <li>Gestures at the 12-month vision — a care-partner you converse with during a live consult.</li>
+        </ul>
+        <h3 class="against">❌ The case AGAINST</h3>
+        <ul>
+          <li>Looks like "Heidi Evidence + a calculator" — the exact differentiation gap the review closed.</li>
+          <li>The safety spine scrolls away — dose trace, provenance, completeness aren't persistent.</li>
+          <li>The two-turn STOP reads as "did it freeze?" in a thread.</li>
+          <li>The open composer invites free-text the trust boundary doesn't want.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="col">
+      <h2>B · Structured Care-Partner Console</h2>
+      <div class="vlabel">two-panel workspace · stepped Turn 1 → Turn 2 · not a chat</div>
+      <div class="frame"><iframe src="structured.html" title="Structured variant"></iframe></div>
+      <a class="open" href="structured.html" target="_blank">Open B full-screen ↗</a>
+      <div class="args">
+        <h3 class="for">✅ The case FOR structured</h3>
+        <ul>
+          <li>Makes the judgment→execution architecture <b>visible</b> — the thing being graded.</li>
+          <li>Safety spine is persistent + provenance-labeled (DET vs LLM badges) — scannable at a glance.</li>
+          <li>The two-turn STOP reads as obvious ("your turn" buttons are the next step).</li>
+          <li>Structure enforces the deterministic, injection-resistant demo rails the design wants.</li>
+        </ul>
+        <h3 class="against">❌ The case AGAINST</h3>
+        <ul>
+          <li>Less familiar — a custom workspace, not the ChatGPT pattern everyone knows.</li>
+          <li>More layout to hand-build (though AI Elements leaf components still slot in).</li>
+          <li>Further from the "conversational live-consult" 12-month vision.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <table class="cmp">
+    <thead><tr><th>Dimension</th><th>A · Chatbot</th><th>B · Console</th></tr></thead>
+    <tbody>
+      <tr><td class="dim">Differentiates from Heidi Evidence</td><td>weak (looks derivative)</td><td class="win">strong (architecture visible)</td></tr>
+      <tr><td class="dim">Safety spine legible on camera</td><td>scrolls away</td><td class="win">persistent panels</td></tr>
+      <tr><td class="dim">Two-turn STOP clarity</td><td>ambiguous ("frozen?")</td><td class="win">obvious ("your turn")</td></tr>
+      <tr><td class="dim">Reviewer familiarity</td><td class="win">instant (ChatGPT)</td><td>slight learning curve</td></tr>
+      <tr><td class="dim">Build effort / reuse</td><td class="win">lowest (AI Elements shell)</td><td>moderate (custom layout + AI Elements leaves)</td></tr>
+      <tr><td class="dim">Fits 12-month live-consult vision</td><td class="win">closer</td><td>further (but nameable in Loom)</td></tr>
+      <tr><td class="dim">"Looks like a clinical instrument"</td><td>looks like a chatbot</td><td class="win">looks like a regulated tool</td></tr>
+    </tbody>
+  </table>
+
+  <div class="verdict">
+    <b>My lean: <span class="lean">B, the structured console</span></b> — for a <i>Medical AI Specialist</i> take-home whose thesis is "faithfulness ≠ safety, here's the deterministic spine," the interface should <b>claim the product is a clinical instrument you can inspect</b>, not a chatbot you talk to. B makes the safety architecture the hero; A makes it scroll past. But A's "this might be the real product" argument is genuine — so the honest move is: <b>ship B, and name the conversational live-consult version as the headline "if I had another day" beat in the Loom.</b> That gets you the graded-strength interface now <i>and</i> the vision story. Your call — you have context on the reviewer I don't.
+  </div>
+</div>
+</body>
+</html>
