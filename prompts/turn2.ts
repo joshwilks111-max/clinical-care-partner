@@ -216,6 +216,8 @@ export function buildPlanSystemPrompt(guideline: Guideline): string {
     "  guideline sections, cited.",
     "",
     "GUIDELINE CITATION VALUES (use verbatim for source_* fields):",
+    // v1: guidelines are single-source, so we pin citations to dose_rules[0].
+    // A multi-source guideline would need per-recommendation citation values.
     `  - source_section: ${guideline.dose_rules[0]?.source_section ?? guideline.condition}`,
     `  - source_version: ${guideline.dose_rules[0]?.source_version ?? ""}`,
     `  - source_url: ${guideline.dose_rules[0]?.source_url ?? ""}`,

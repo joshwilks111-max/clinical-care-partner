@@ -39,7 +39,11 @@ import { generateText, Output, stepCountIs } from "ai";
 
 import { route, auditRoutedGuideline } from "@/lib/router";
 import { getGuideline } from "@/registry/guidelines";
-import { calculate_dose, isRefusal } from "@/tools/calculate_dose";
+import {
+  calculate_dose,
+  isRefusal,
+  type DoseResult,
+} from "@/tools/calculate_dose";
 import { checkCompleteness, type SlotRecord } from "@/lib/completeness";
 import { noGuidelineAbstention } from "@/lib/refusal-gate";
 import {
@@ -85,29 +89,24 @@ type Provenance = {
   severity_reasoning: string;
 };
 
-type SuccessResponse = {
+export type SuccessResponse = {
   status: "ok";
   /** The deterministic dose result (the tool owns every number here). */
-  dose: {
-    drug: string;
-    route: string;
-    frequency: string;
-    dose_mg: number;
-    dose_ml: number | null;
-    calculation_trace: string;
-    capped: boolean;
-    binding_limit: number | null;
-    data_gaps: string[];
-  };
+  dose: Omit<DoseResult, "kind">;
   /** The Zod-validated, citation-carrying plan. */
   plan: PlanOutputType;
   /** The visible judgment→execution seam: how this plan was produced. */
   provenance: Provenance;
 };
 
-type AbstentionResponse = { status: "abstention" } & Omit<Abstention, "kind">;
+export type AbstentionResponse = { status: "abstention" } & Omit<
+  Abstention,
+  "kind"
+>;
 
-type IncompleteResponse = {
+// Renders amber like an abstention, but is a DISTINCT status: a plan EXISTS and
+// is returned to show with the missing field(s) flagged (not a deliberate refusal).
+export type IncompleteResponse = {
   status: "incomplete";
   /** The required slots that FAILED the completeness gate (named for the UI). */
   missing: string[];
@@ -118,10 +117,18 @@ type IncompleteResponse = {
   provenance: Provenance;
 };
 
-type TechnicalErrorResponse = {
+export type TechnicalErrorResponse = {
   status: "error";
   message: string;
 };
+
+/** The full turn-2 response union (discriminated by `status`) — exported so the
+ * console UI consumes the exact wire shape instead of hand-redeclaring it. */
+export type Turn2Response =
+  | SuccessResponse
+  | AbstentionResponse
+  | IncompleteResponse
+  | TechnicalErrorResponse;
 
 // ---------------------------------------------------------------------------
 // Helpers.
@@ -361,19 +368,11 @@ export async function POST(req: Request): Promise<Response> {
   // ===================================================================
   // STEP 8: SUCCESS — dose + trace + cited plan + the visible provenance seam.
   // ===================================================================
+  // Strip the tool's `kind` discriminator; the rest IS the wire dose shape.
+  const { kind: _k, ...dose } = doseResult;
   const ok: SuccessResponse = {
     status: "ok",
-    dose: {
-      drug: doseResult.drug,
-      route: doseResult.route,
-      frequency: doseResult.frequency,
-      dose_mg: doseResult.dose_mg,
-      dose_ml: doseResult.dose_ml,
-      calculation_trace: doseResult.calculation_trace,
-      capped: doseResult.capped,
-      binding_limit: doseResult.binding_limit,
-      data_gaps: doseResult.data_gaps,
-    },
+    dose,
     plan,
     provenance,
   };
