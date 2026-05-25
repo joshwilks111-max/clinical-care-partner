@@ -35,5 +35,3 @@ next-env.d.ts
 *.tsbuildinfo
 /coverage/
 .vercel
-
-.vercel
