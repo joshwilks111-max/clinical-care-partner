@@ -45,7 +45,10 @@ import {
   type DoseResult,
 } from "@/tools/calculate_dose";
 import { checkCompleteness, type SlotRecord } from "@/lib/completeness";
-import { noGuidelineAbstention } from "@/lib/refusal-gate";
+import {
+  noGuidelineAbstention,
+  wrongGuidelineAbstention,
+} from "@/lib/refusal-gate";
 import { withTransientRetry } from "@/lib/retry";
 import {
   PlanOutput,
@@ -273,11 +276,13 @@ export async function POST(req: Request): Promise<Response> {
   // Wrong-guideline AUDIT (now non-tautological): the CLICKED guideline's
   // registered condition must equal the clinician-confirmed condition. This
   // CATCHES the wrong-guideline case (e.g. condition "croup" but the clicked id
-  // is the anaphylaxis guideline) and abstains rather than silently dosing the
-  // wrong drug.
+  // is the anaphylaxis guideline) and abstains with reason "wrong_guideline"
+  // rather than silently dosing the wrong drug. The copy is distinct from
+  // "no guideline matches" — a guideline EXISTS, it just does not match the
+  // confirmed condition.
   if (!auditRoutedGuideline(condition, routedId)) {
     return NextResponse.json(
-      abstentionResponse(fromRefusalDecision(noGuidelineAbstention())),
+      abstentionResponse(fromRefusalDecision(wrongGuidelineAbstention())),
     );
   }
 
