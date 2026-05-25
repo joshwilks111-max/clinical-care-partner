@@ -121,7 +121,8 @@ export function buildPlanOutputSchema(guideline: Guideline) {
  * Which layer abstained — kept for provenance/debugging and so the UI could (if
  * it wanted) badge the seam. It does NOT change the amber treatment.
  *   - "pre-llm"     : the pre-LLM weight gate (refusal-gate, weight_missing).
- *   - "no-guideline": no registry guideline / router null (refusal-gate).
+ *   - "no-guideline": no registry guideline / router null, OR a wrong-guideline
+ *                     condition/guideline mismatch (refusal-gate).
  *   - "dose-tool"   : the deterministic dose tool refused mid-execution.
  */
 export type AbstentionSource = "pre-llm" | "dose-tool" | "no-guideline";
