@@ -3,8 +3,9 @@
 A thin clinical router over a registry of deterministic, safety-audited skills. Not "retrieve and
 quote" — the layer above: **weigh the differential → clinician steers → apply safely.**
 
-> Design contract: `DESIGN.md`. Architecture diagram: `docs/architecture.md`. Deferred list:
-> `TODOS.md`. The WHY behind every claim: `research/`.
+> Design contract: [`DESIGN.md`](DESIGN.md). Architecture diagram: [`docs/architecture.md`](docs/architecture.md).
+> Deferred list: [`TODOS.md`](TODOS.md). The WHY behind every claim:
+> [`research/papers.md`](research/papers.md) · [`clinical-facts.md`](research/clinical-facts.md) · [`last30days.md`](research/last30days.md).
 
 ---
 
