@@ -1,6 +1,8 @@
 // registry/guidelines.ts
 //
 // The registry is the SINGLE SOURCE OF TRUTH for every clinical value.
+// Exports buildConditionGuidelineMap + getGuidelineIdForCondition (Task 6) for
+// use by turn1.5 (collapse loop) and turn2's defensive gate.
 // INVARIANT: the LLM picks a dose rule BY ID and never sets the numbers.
 // The deterministic dose tool (tools/calculate_dose.ts) looks every value up here — drug,
 // mg_per_kg, max_mg, route, concentration_mg_per_ml, rounding, min_mg. This is
@@ -308,3 +310,42 @@ export const ROUTING_TABLE: ReadonlyArray<{
     guideline_id: "ascia-anaphylaxis-2024",
   },
 ];
+
+// ---------------------------------------------------------------------------
+// Task 6: condition→guideline map helpers.
+// ---------------------------------------------------------------------------
+
+import type { ConditionGuidelineMap } from "@/lib/collapse";
+
+/**
+ * Normalization CONTRACT: identical to lib/collapse's private norm() —
+ * lowercase + trim + internal-whitespace-collapse. A 3-token duplicate with
+ * this comment is intentional: collapse.ts's norm() is private by design;
+ * duplicating 3 tokens is safer than coupling two independent modules via an
+ * export. The contract is the comment — if you change norm() in collapse.ts
+ * you MUST mirror it here.
+ */
+function normCondition(s: string): string {
+  return s.toLowerCase().trim().replace(/\s+/g, " ");
+}
+
+/**
+ * Build the NORMALIZED condition-name → guideline_id map that decideCollapse
+ * (lib/collapse) consumes. Keys are normalized with the SAME norm() contract as
+ * lib/collapse (lowercase + trim + internal-whitespace-collapse) so a
+ * differential condition "Croup" resolves to "croup" → its guideline_id.
+ * Built from ROUTING_TABLE — the single source of truth. Adding a guideline
+ * (TODOS #7) just adds a ROUTING_TABLE row; this map and collapse.ts need no edits.
+ */
+export function buildConditionGuidelineMap(): ConditionGuidelineMap {
+  const map: ConditionGuidelineMap = {};
+  for (const row of ROUTING_TABLE) {
+    map[normCondition(row.condition)] = row.guideline_id;
+  }
+  return map;
+}
+
+/** Convenience: the guideline_id for a (raw, un-normalized) condition, or null. */
+export function getGuidelineIdForCondition(condition: string): string | null {
+  return buildConditionGuidelineMap()[normCondition(condition)] ?? null;
+}

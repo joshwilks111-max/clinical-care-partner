@@ -24,6 +24,14 @@ import type { ExtractedFacts, Differential } from "@/lib/schemas";
  * The frozen turn-1 result + the clinician's confirmations. Server-owned:
  * constructed on the server from turn-1's validated output; the selected_* slots
  * are filled by the clinician's UI selections before turn 2 runs.
+ *
+ * SERVER-OWNED fields (turn1.5 writes; turn2 reads but NEVER mutates):
+ *   - discriminating_qa: the Q&A pairs produced by the turn-1.5 collapse loop.
+ *     Turn1.5 is the sole writer; turn2 may read for context but must not append.
+ *   - round: collapse loop iteration counter. Turn1.5 increments it each time it
+ *     asks a discriminating question. Turn2 reads but MUST NOT write it —
+ *     defense-in-depth: if turn2 mutated round it could bypass the MAX_ROUNDS
+ *     safety guard in decideCollapse.
  */
 export type CaseState = {
   /** SHA-256 hex of the raw note — pins provenance without carrying the text. */
@@ -38,6 +46,10 @@ export type CaseState = {
   selected_guideline_id: string | null;
   /** Clinician-confirmed severity row (null until confirmed). */
   selected_severity: string | null;
+  /** Discriminating Q&A from the turn-1.5 collapse loop. SERVER-OWNED — only turn1.5 appends. */
+  discriminating_qa: { question: string; answer: string; round: number }[];
+  /** Collapse round counter. SERVER-OWNED — only turn1.5 increments; turn2 never mutates it. */
+  round: number;
 };
 
 /**
@@ -65,6 +77,11 @@ export function buildCaseState(args: {
   selectedCondition?: string | null;
   selectedGuidelineId?: string | null;
   selectedSeverity?: string | null;
+  /** Discriminating Q&A from the collapse loop. Defaults to []. Turn1.5 seeds this
+   *  when rebuilding CaseState with an incremented round. */
+  discriminatingQa?: { question: string; answer: string; round: number }[];
+  /** Collapse round counter. Defaults to 0. Only turn1.5 should pass a non-zero value. */
+  round?: number;
 }): CaseState {
   return {
     note_hash: hashNote(args.note),
@@ -73,5 +90,7 @@ export function buildCaseState(args: {
     selected_condition: args.selectedCondition ?? null,
     selected_guideline_id: args.selectedGuidelineId ?? null,
     selected_severity: args.selectedSeverity ?? null,
+    discriminating_qa: args.discriminatingQa ?? [],
+    round: args.round ?? 0,
   };
 }

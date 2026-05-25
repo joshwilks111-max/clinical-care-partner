@@ -184,6 +184,8 @@ const CROUP_CASE_STATE: CaseState = {
   selected_condition: null,
   selected_guideline_id: null,
   selected_severity: null,
+  discriminating_qa: [],
+  round: 0,
 };
 
 // ---------------------------------------------------------------------------

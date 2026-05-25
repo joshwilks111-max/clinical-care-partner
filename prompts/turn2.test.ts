@@ -36,6 +36,8 @@ const caseState: CaseState = {
   selected_condition: "croup",
   selected_guideline_id: "starship-croup-2020",
   selected_severity: "moderate",
+  discriminating_qa: [],
+  round: 0,
 };
 
 const computedDose: ComputedDoseForPrompt = {

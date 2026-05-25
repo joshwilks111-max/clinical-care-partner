@@ -181,9 +181,19 @@ function isCaseStateLike(v: unknown): v is CaseState {
   if (typeof facts !== "object" || facts === null) return false;
   const f = facts as Record<string, unknown>;
   const weightOk = f.weight_kg === null || typeof f.weight_kg === "number";
+  // Validate differential.conditions is an array. turn1.5 and turn2's gate both
+  // read differential.conditions; an absent/non-array differential is a malformed
+  // CaseState. We do NOT validate the nested condition shape — collapse tolerates
+  // an empty/odd array by abstaining. round/discriminating_qa are NOT required
+  // here: a turn2 POST from the pre-turn1.5 flow may omit them; treat missing as 0/[].
+  const differentialOk =
+    typeof c.differential === "object" &&
+    c.differential !== null &&
+    Array.isArray((c.differential as Record<string, unknown>).conditions);
   return (
     typeof c.note_hash === "string" &&
     weightOk &&
+    differentialOk &&
     (c.selected_condition === null ||
       typeof c.selected_condition === "string") &&
     (c.selected_guideline_id === null ||
