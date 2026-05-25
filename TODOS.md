@@ -14,9 +14,11 @@ Blast radius = a take-home demo, not a deployed clinical system. None is in v1 s
 | 7 | **3rd guideline / non-dose skill** (e.g. interaction-check) | Proving the registry beyond dose calculators | S / S | P3 (registry proven; data-entry work) |
 | 8 | **Scale retrieval** (live guideline service / data partnership / agentic retrieval over a large medical knowledge space; cf. KnowGuard's systematic knowledge-graph exploration, arXiv:2509.24816) | Corpus outgrows the context window | L / M | P3 |
 | 9 | **Production privacy** (on-prem / no-PHI; GDPR/HIPAA) | Real patient data instead of synthetic notes | L / M | P3 (noted as a limitation) |
+| 10 | **Mild "watch / observe" croup arm** (no-steroid management) — every croup path currently routes to a dose; the mild arm is observation/discharge with no drug. Needs a *disposition-only* plan shape (`drug`/`dose` nullable) + a completeness-gate exception for the observation arm. | Adding a non-dosing management arm to any guideline | M / S | P2 (clinician-flagged) |
 
 ## Notes
 - Items 1, 4 are the strongest Loom "if I had another day" beats (1 = nastier-failure safety; 4 = the real product).
+- **Item 10 (mild watch arm)** is independent clinician validation: an urgent-care doc (review, 2026-05-25) reconstructed the severity→treatment-arm ladder from the outside and named "watch, low-dose steroid, high-dose steroid, neb adrenaline + secondary care." The build already models the steroid-dose arms (moderate/severe) + escalation/disposition; only the mild *no-drug* arm is deferred (it needs a disposition-only plan shape, a different output *kind* from the dose arms). Deferred to hold v1 scope, not because it was missed.
 - **Independent corroboration:** KnowGuard (Harvard Medical School / Zitnik lab, arXiv:2509.24816, under
   review) reached the same *investigate-before-abstain* paradigm this PoC was built around. Its
   knowledge-graph mechanism is precisely items 8 (scale retrieval) and 4 (active multi-round collapse) —

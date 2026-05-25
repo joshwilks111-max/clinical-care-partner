@@ -34,9 +34,10 @@ direction. That large-corpus path is the **deferred** option here, cited with it
 
 The real reason is the **token budget**, not the papers:
 
-- The corpus is **2 documents, ~5K tokens each ≈ 10K tokens total.** That fits the context window
-  with room to spare. **Retrieval is unnecessary** — there is nothing to retrieve *from* that the
-  model can't hold in full.
+- The corpus is **2 documents, ~800 tokens total** (Starship croup ~432 + ASCIA anaphylaxis ~368,
+  measured from the committed `whole_document_text` in `registry/guidelines.ts`). That fits the
+  context window many times over. **Retrieval is unnecessary** — there is nothing to retrieve *from*
+  that the model can't hold in full.
 - **A dose, its cap, and its severity threshold must stay co-present.** Chunking risks splitting a
   dose from its cap — a safety hazard with no upside on a corpus this small. Whole-document retrieval
   guarantees they travel together.
@@ -57,7 +58,7 @@ partnership) — the DCI-style regime, where the scale caveat stops applying bec
 large. This is captured in `TODOS.md` (item 8, "Scale retrieval") and named in the Loom's deferred
 beat. The trigger is explicit: **corpus > context window**, not "someday."
 
-**Bottom line:** for a 2-document, ~10K-token clinical corpus, the senior move is to *not* build a
+**Bottom line:** for a 2-document, ~800-token clinical corpus, the senior move is to *not* build a
 retrieval system — load the whole document, keep dose+cap+threshold co-present, and spend the saved
 complexity on the judgment layer (the differential) and the safety spine (the deterministic dose
 tool + completeness gate). The recent literature is consistent with that; the token budget compels it.

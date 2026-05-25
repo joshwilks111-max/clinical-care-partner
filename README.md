@@ -13,8 +13,9 @@ quote" — the layer above: **weigh the differential → clinician steers → ap
 
 **Live:** **https://clinical-care-partner.vercel.app** — key server-side, zero reviewer setup.
 
-Four **one-click demo buttons** — the reviewer never types a word; each POSTs a pre-filled,
-verified note and produces the same result every run:
+**One-click demo buttons** (no typing needed) — each POSTs a pre-filled, verified note or
+transcript and produces the same result every run. **Or paste your own** note/transcript in the
+box below the buttons; it runs the same engine (and a weightless paste hits the refusal gate live):
 
 | Button | What it demonstrates |
 |---|---|
@@ -22,6 +23,8 @@ verified note and produces the same result every run:
 | **Croup (Jack)** | Jack 14.2 kg moderate croup → **2.13 mg** dexamethasone, full trace, Starship cited. |
 | **Cap (25 kg severe)** | 25 kg severe croup → 15 mg raw → **CAPPED to 12 mg**, visibly. |
 | **Anaphylaxis** | Adrenaline 0.01 mg/kg IM → **0.14 mL**. Same harness, different drug/route/cap. |
+| **Transcript (croup)** | A doctor–parent **dialogue** with a weight → full differential → dose. Proves free-form *transcript* intake, not just notes. |
+| **Transcript (no weight)** | The same dialogue with **no weight stated** → the refusal gate fires on a messy real transcript. |
 
 **The Loom opener (key-free + reproducible):** the **Refusal** button is a *pre-LLM deterministic
 gate* — extract facts, see `weight_kg == null`, refuse. **No API key, no model call, reproducible
@@ -55,7 +58,10 @@ Everything else is a conscious deferral (`TODOS.md`).
 
 ## 3. Architecture
 
-**Full one-page diagram + legend: [`docs/architecture.md`](docs/architecture.md).**
+**One-page diagram: [`docs/architecture.png`](docs/architecture.png) (rendered) · editable
+source [`docs/architecture.md`](docs/architecture.md).**
+
+![Architecture — judgment up, execution down](docs/architecture.png)
 
 **Judgment up, execution down.** The LLM does the thinking — builds the differential, weighs
 evidence, classifies severity against the guideline's own table, picks the dose *rule by id*.
@@ -64,6 +70,19 @@ doing the arithmetic (the `calculate_dose` tool) — is deterministic and audita
 (differential → STOP for clinician confirmation → apply) **is** the human-in-the-loop mechanism: two
 native round-trips, each independently reproducible, with a server-owned `CaseState` carrying turn 1's
 confirmed outputs into turn 2 (zero re-extraction). The diagram draws that boundary as a visible seam.
+
+### Retrieval: whole-document injection — the right tool for a two-document corpus
+
+The brief asks for "basic RAG, agentic AI/MCP **or similar**." This is the "or similar":
+**deterministic routing over the local guideline registry, then whole-document grounding** —
+the matched guideline is injected in full, and the model cites sections of it verbatim. The
+committed corpus is two guidelines totalling **~800 tokens** (Starship croup ~432 + ASCIA
+anaphylaxis ~368), so both fit comfortably in context with room to spare. At this size,
+chunking + embeddings would add failure modes — wrong-chunk retrieval, or splitting a dose
+from its cap — for little practical benefit. Whole-document injection is the senior call **for
+v1's corpus**; vector / agentic retrieval is the documented path once the corpus outgrows the
+context window (see [`TODOS.md`](TODOS.md) #8, and the evidence in
+[`research/last30days.md`](research/last30days.md) · [`research/papers.md`](research/papers.md)).
 
 ---
 
@@ -240,7 +259,7 @@ scan).
 | Lexical search surfaces verbatim strings (citation mechanism) | `research/papers.md` → 2605.15184 (PwC grep) |
 | Agentic retrieval is the *deferred* large-corpus path | `research/papers.md` → 2605.05242 (DCI, scale caveat) |
 | Abstention-as-safety / investigate-before-abstain (independent corroboration) | `research/papers.md` → 2509.24816 (KnowGuard, HMS/Zitnik) |
-| Whole-document retrieval correct for a ~10K-token, 2-doc corpus | `research/last30days.md` (token budget is the real reason) |
+| Whole-document retrieval correct for a small (~800-token, 2-doc) corpus — the decision + measured figure live in [§3 → Retrieval](#3-architecture) | `research/last30days.md` (token budget is the real reason) |
 | Croup dexamethasone 0.15 mg/kg / 0.6 severe / 12mg cap / oral | `research/clinical-facts.md` → Croup (Starship NZ) |
 | Jack 14.2kg moderate → 2.13mg | `research/clinical-facts.md` → Croup worked example |
 | Anaphylaxis adrenaline 0.01 mg/kg IM, 0.5mg cap → 0.14mL | `research/clinical-facts.md` → Anaphylaxis (ASCIA AU/NZ) |

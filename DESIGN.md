@@ -74,9 +74,10 @@ chatbot round-trips, each independently reproducible).
   stored as committed, version-pinned whole text + typed `DoseRule` JSON + typed `RequiredFields`.
   (Two ≠ one: a single condition can't be told apart from a hardcoded tool.)
 - **Whole-document retrieval, no vector DB, no chunking.** Justification leads with the token budget:
-  2 × ~5K tokens ≈ 10K, fits the context window with room to spare — retrieval is unnecessary. Dose +
-  cap + threshold always co-present (can't split a dose from its cap). Field-direction evidence in
-  `research/papers.md`, cited as *consistent-with*, not load-bearing.
+  2 guidelines, ~800 tokens total (measured from `registry/guidelines.ts`), fit the context window
+  many times over — retrieval is unnecessary. Dose + cap + threshold always co-present (can't split a
+  dose from its cap). Field-direction evidence in `research/papers.md`, cited as *consistent-with*,
+  not load-bearing.
 - **Deterministic routing table** `(condition, profession, setting) → guideline_id`. The clinician
   confirms the condition (turn 1 button); the table DISPATCHES that confirmed diagnosis to the one
   guideline (turn 2). The table does not diagnose — it routes. One guideline per condition. Routed
