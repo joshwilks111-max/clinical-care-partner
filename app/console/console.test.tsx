@@ -104,7 +104,7 @@ describe("Console — paste-your-own intake (Task B, free-form note/transcript)"
     expect(run).not.toBeDisabled();
   });
 
-  it("POSTs the TYPED text verbatim to /api/turn1 (the single trust-boundary path)", async () => {
+  it("POSTs the typed text (trimmed, inner content preserved) to /api/turn1 — the single trust-boundary path", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       jsonResponse({
         status: "refusal",
@@ -115,7 +115,11 @@ describe("Console — paste-your-own intake (Task B, free-form note/transcript)"
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Console />);
-    const typed = "Parent: barky cough, stridor at rest. Doctor: weight?";
+    // Surrounding whitespace on purpose: runTurn1 trims the OUTER whitespace
+    // (so an accidental trailing newline can't change the note) but preserves
+    // the inner content exactly — that is the precise "verbatim" guarantee.
+    const inner = "Parent: barky cough, stridor at rest. Doctor: weight?";
+    const typed = `\n  ${inner}  \n`;
     fireEvent.change(screen.getByLabelText(/paste your own note/i), {
       target: { value: typed },
     });
@@ -125,12 +129,12 @@ describe("Console — paste-your-own intake (Task B, free-form note/transcript)"
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
     // The endpoint MUST be /api/turn1 (a bypass refactor would change this) and
-    // the body note MUST equal the typed string verbatim.
+    // the body note MUST equal the trimmed typed string (inner content intact).
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/turn1");
     const sentNote = JSON.parse((init as RequestInit).body as string)
       .note as string;
-    expect(sentNote).toBe(typed);
+    expect(sentNote).toBe(inner);
   });
 
   it("Cmd/Ctrl+Enter in the textarea runs turn-1", async () => {

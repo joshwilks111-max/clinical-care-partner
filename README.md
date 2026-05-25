@@ -3,7 +3,7 @@
 A thin clinical router over a registry of deterministic, safety-audited skills. Not "retrieve and
 quote" — the layer above: **weigh the differential → clinician steers → apply safely.**
 
-> Design contract: [`DESIGN.md`](DESIGN.md). Architecture diagram: [`docs/architecture.md`](docs/architecture.md).
+> Design contract: [`DESIGN.md`](DESIGN.md). Architecture: [`docs/architecture.png`](docs/architecture.png) (one-page) · [`docs/architecture.md`](docs/architecture.md) (source).
 > Deferred list: [`TODOS.md`](TODOS.md). The WHY behind every claim:
 > [`research/papers.md`](research/papers.md) · [`clinical-facts.md`](research/clinical-facts.md) · [`last30days.md`](research/last30days.md).
 
@@ -14,8 +14,11 @@ quote" — the layer above: **weigh the differential → clinician steers → ap
 **Live:** **https://clinical-care-partner.vercel.app** — key server-side, zero reviewer setup.
 
 **One-click demo buttons** (no typing needed) — each POSTs a pre-filled, verified note or
-transcript and produces the same result every run. **Or paste your own** note/transcript in the
-box below the buttons; it runs the same engine (and a weightless paste hits the refusal gate live):
+transcript. The deterministic paths are bit-for-bit reproducible every run (the **Refusal** and
+**Transcript (no weight)** buttons make **zero** model calls; the dose paths read every number from
+the deterministic tool, so the dose is identical run to run — only the surrounding prose can vary).
+**Or paste your own** note/transcript in the box below the buttons; it runs the same engine (and a
+weightless paste hits the refusal gate live):
 
 | Button | What it demonstrates |
 |---|---|
@@ -107,8 +110,8 @@ npm run dev        # http://localhost:3000
 ```
 
 Target: under 10 minutes from clone to running. The **live URL is the primary path** (key
-server-side); local is the documented fallback. The four demo buttons need no typing, and the
-**Refusal** demo needs no key at all.
+server-side); local is the documented fallback. The six demo buttons need no typing (or paste your
+own note/transcript), and the **Refusal** demo needs no key at all.
 
 ### Environment gotchas (real — found during the build; read before debugging a failed call)
 
@@ -249,6 +252,12 @@ boundaries deliberately left for production. The point of a 4-day take-home is j
   guarantee uses a kg-pattern regex on the raw note — a brittle proxy for a clinical fact (it can be
   fooled by "5 kg dog" or a European-decimal "14,2 kg"). The authoritative post-extraction gate and
   GUARD-7 are the real backstops; the pre-LLM gate is the key-free *fast path*, not the sole guarantee.
+- **No request-sequencing on turn 1.** `runTurn1` has no request-id / abort-controller, so a
+  last-write-wins race is *theoretically* possible (a slow response for note A landing after note B).
+  In practice it is **not reachable through the UI**: the `busy` guard disables every demo button, the
+  textarea, and Run while a request is in flight, and the keyboard-submit re-checks `busy === null`, so
+  a second turn-1 can't start until the first resolves. Production hardening (multi-tab, programmatic
+  clients) would add an incrementing request id that ignores stale responses. Deferred, not unnoticed.
 
 ---
 
