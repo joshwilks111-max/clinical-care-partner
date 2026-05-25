@@ -217,6 +217,12 @@ boundaries deliberately left for production. The point of a 4-day take-home is j
 - **Turn-1 trust delimiters + closed candidate set hold.** The untrusted note is wrapped as data; the
   candidate-guideline set is registry-derived, so a note naming a fake guideline cannot inject a
   candidate. Turn 2 routes on the clinician's confirmed selection and never re-reads the raw note.
+  **Forged-delimiter defence:** because the console now accepts free-text paste, an input that itself
+  contains the boundary markers is sanitised before wrapping (`sanitizeUntrustedNote` strips any
+  `NOTE_OPEN`/`NOTE_CLOSE` substrings), so the model always sees exactly one open + one close — a paste
+  cannot close the untrusted region early. The blast radius was already bounded (turn 1 emits a
+  structured differential, never a dose), so this is defence-in-depth on a path the deterministic
+  spine already contains.
 - **Citations are now verified, not just prompted.** `source_url` is stamped server-side from the
   registry (the model never authors the security-sensitive URL), and each `quote` is checked to be a
   real substring of the guideline text before it renders as a verbatim blockquote — a hallucinated
