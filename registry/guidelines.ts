@@ -103,11 +103,12 @@ DISPOSITION / MONITORING
 const STARSHIP_SOURCE_SECTION =
   "Croup — Corticosteroid treatment (dexamethasone dosing)";
 const STARSHIP_SOURCE_VERSION = "Starship NZ Clinical Guideline, 2020";
-// research/clinical-facts.md flags this URL [CONFIRM URL AT BUILD]: ship the
-// named site, not a guessed-as-verified deep link — a wrong citation URL is a
-// trust defect in a clinical tool. Confirm the live Croup section before README.
-const STARSHIP_SOURCE_URL =
-  "https://starship.org.nz/guidelines/croup/ [CONFIRM URL AT BUILD]";
+// URL resolved + verified reachable at build (2026-05-25): the Starship Croup
+// clinical guideline page returns HTTP 200 and is indexed as the croup guideline.
+// (The page body is JS-rendered, so the live dosing text is confirmed via the
+// committed whole_document_text above + research/clinical-facts.md, not a scrape.)
+// Kept in lockstep with research/clinical-facts.md.
+const STARSHIP_SOURCE_URL = "https://www.starship.org.nz/guidelines/croup/";
 
 const starshipCroup: Guideline = {
   guideline_id: "starship-croup-2020",
@@ -203,10 +204,14 @@ MONITORING / OBSERVATION
 const ASCIA_SOURCE_SECTION =
   "Acute management of anaphylaxis — First-line intramuscular adrenaline";
 const ASCIA_SOURCE_VERSION = "ASCIA AU/NZ Guidelines, 2024";
-// research/clinical-facts.md flags this URL [CONFIRM URL AT BUILD]: keep the
-// named ASCIA site + version, confirm the live anaphylaxis section before README.
+// URL resolved + content-verified at build (2026-05-25): the ASCIA HP guideline
+// PDF returns HTTP 200 and page 4 states verbatim "INTRAMUSCULAR INJECTION (IMI)
+// OF ADRENALINE (1:1,000) ... (0.01mg per kg up to 0.5mg per dose)" and
+// "Adrenaline 1:1,000 ampoules contain 1mg adrenaline per 1mL" — matching the
+// registry's 0.01 mg/kg IM, 0.5 mg cap, 1.0 mg/mL exactly. Kept in lockstep with
+// research/clinical-facts.md.
 const ASCIA_SOURCE_URL =
-  "https://www.allergy.org.au/hp/anaphylaxis/acute-management-of-anaphylaxis-guidelines [CONFIRM URL AT BUILD]";
+  "https://www.allergy.org.au/images/ASCIA_HP_Guidelines_Acute_Management_Anaphylaxis_2024.pdf";
 
 const asciaAnaphylaxis: Guideline = {
   guideline_id: "ascia-anaphylaxis-2024",

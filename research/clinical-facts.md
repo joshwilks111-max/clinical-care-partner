@@ -4,9 +4,9 @@
 `registry/` encodes exactly these numbers; the `calculate_dose` tool reads them; the eval asserts
 against them. Do NOT re-guess any number here — change it here first, with a source, then propagate.
 
-Numbers below are locked in DESIGN.md ("Verified clinical numbers — do NOT re-guess"). Where a
-primary-source URL could not be confirmed with certainty, the source is **named** and the URL is
-flagged **[CONFIRM URL AT BUILD]** rather than invented.
+Numbers below are locked in DESIGN.md ("Verified clinical numbers — do NOT re-guess"). The
+primary-source URLs were resolved + verified at build (2026-05-25, see each section). They are kept
+in **lockstep** with `registry/guidelines.ts` (`source_url` fields) — change one, change both.
 
 ---
 
@@ -31,9 +31,10 @@ flagged **[CONFIRM URL AT BUILD]** rather than invented.
 **Primary source:** Starship Children's Health (Te Whatu Ora / Starship NZ) — **Croup** clinical
 guideline. Severity definitions used for the differential/severity rows: *moderate* = stridor at
 rest, no cyanosis; *severe* = marked distress / cyanosis / lethargy.
-URL: **[CONFIRM URL AT BUILD]** — Starship clinical-guidelines site (`starship.org.nz`), Croup page,
-version-pinned. The committed registry entry stores `source_url` + `source_version`; both must
-resolve to the live Starship Croup guideline section before the README ships.
+URL (verified reachable 2026-05-25, HTTP 200, indexed as the Starship Croup guideline):
+**https://www.starship.org.nz/guidelines/croup/**. The page body is JS-rendered, so the live dosing
+text is captured in the committed `whole_document_text` in `registry/guidelines.ts` rather than
+scraped at runtime. The registry entry stores this `source_url` + `source_version` (lockstep).
 
 ---
 
@@ -59,9 +60,13 @@ resolve to the live Starship Croup guideline section before the README ships.
 
 **Primary source:** ASCIA (Australasian Society of Clinical Immunology and Allergy) — AU/NZ
 anaphylaxis / adrenaline guidance (the standard AU/NZ first-dose reference).
-URL: **[CONFIRM URL AT BUILD]** — ASCIA site (`allergy.org.au`), anaphylaxis guidelines page,
-version-pinned. The committed registry entry stores `source_url` + `source_version`; confirm both
-resolve to the live ASCIA section before the README ships.
+URL (verified 2026-05-25, HTTP 200 + content confirmed):
+**https://www.allergy.org.au/images/ASCIA_HP_Guidelines_Acute_Management_Anaphylaxis_2024.pdf** —
+the ASCIA Guidelines: Acute Management of Anaphylaxis (Health Professionals), 2024. Page 4 states
+verbatim: *"Give INTRAMUSCULAR INJECTION (IMI) OF ADRENALINE (1:1,000) into outer mid-thigh (0.01mg
+per kg up to 0.5mg per dose)"* and *"Adrenaline 1:1,000 ampoules contain 1mg adrenaline per 1mL"* —
+matching 0.01 mg/kg IM, 0.5 mg cap, 1.0 mg/mL exactly. The registry entry stores this `source_url` +
+`source_version` (lockstep).
 
 ---
 
@@ -77,8 +82,9 @@ hardcoded tool.
 - Every registry `DoseRule` carries `source_section`, `source_version`, `source_url`, and
   `human_verified`. `human_verified: false` **gates execution** (the tool refuses to run an
   unverified rule).
-- Citations in the app are **clickable links to the real Starship/ASCIA section** — provenance is a
+- Citations in the app are **clickable links to the real Starship/ASCIA source** — provenance is a
   visible seam, not an assertion.
-- If any **[CONFIRM URL AT BUILD]** above cannot be resolved to a live primary-source section, do not
-  ship a guessed URL: keep the source *name* + version and surface "URL pending verification" rather
-  than fabricate a link. A wrong citation URL is a safety/trust defect in a clinical tool.
+- URLs are version-pinned and were verified reachable at build (see each section). Discipline if a
+  URL ever fails to resolve to a live primary-source section: do not ship a guessed link — keep the
+  source *name* + version and surface "URL pending verification" rather than fabricate one. A wrong
+  citation URL is a safety/trust defect in a clinical tool.

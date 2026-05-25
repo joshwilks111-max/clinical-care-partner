@@ -11,7 +11,7 @@
 # explicit SEVERITY-ROW assertion (so a silent severity flip is caught — case 1
 # must be "moderate", case 4 "severe").
 #
-# Run: `npm run eval` (wraps `npx promptfoo eval -c promptfoo.yaml`).
+# Run: `npm run eval` (wraps `promptfoo eval -c promptfoo.yaml --no-cache`).
 # Reproducibility: opus-4-7 takes no temperature; the dose is exact via the
 # deterministic tool + Zod-structured output, so it comes out identical every run
 # (proven by the reps in the README sample).
@@ -29,8 +29,9 @@ providers:
 prompts:
   - "drive the clinical pipeline for {{case_id}} ({{kind}})"
 
-# Per-case defaults: keep retries off so a flake surfaces rather than hides, and
-# do not let promptfoo add its own grading.
+# Per-case defaults: run serially so a flake surfaces against a clean single-case
+# run rather than hiding behind parallel noise. Grading is the named JS assertions
+# only (no promptfoo-added grader).
 defaultTest:
   options:
     runSerially: true

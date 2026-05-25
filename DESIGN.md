@@ -3,7 +3,8 @@
 
 Status: **SCOPE LOCKED 2026-05-25** (pared from the reviewed walkthrough draft after a 4-paper
 adversarial cross-walk + a live scope-cut). Supersedes the verbose 05-25 walkthrough and the 05-24 draft.
-Mode: take-home build, ~4 days. One model: `claude-opus-4-7`. Stack decided at a 30-min spike.
+Mode: take-home build, ~4 days. One model: `claude-opus-4-7`. **Shipped stack: Next.js + Vercel AI
+SDK 6** (resolved by the 30-min spike — see "Stack — RESOLVED").
 Evidence base lives in `research/` (see end). Submit to kieran@heidihealth.com.
 
 > A thin clinical router over a registry of deterministic, safety-audited skills. Not "retrieve and
@@ -299,7 +300,7 @@ rounding, min_mg floor, Zod parse failure → red technical state). `npm run eva
 ## Stack — RESOLVED by the spike (2026-05-25)
 
 **Shipped stack: Next.js 16 + Vercel AI SDK 6 (`ai@6.0.191` + `@ai-sdk/anthropic@3.0.79`) on `claude-opus-4-7`.**
-Why: the spike (`spike/turn2-shape.ts`) ran the turn-2 shape live and it was **clean** — tool-call +
+Why: a throwaway 30-min spike ran the turn-2 shape live and it was **clean** — tool-call +
 structured output + `stopWhen` all work together on opus-4-7 (tool fired, `Output.object` parsed
 `{dose_mg:2.13, severity:"moderate"}` against Zod, a thrown `tool.execute` surfaced as a catchable
 `tool-error` part — so Task 7's red technical-error state is reachable). Keeps streaming UI + AI Elements
