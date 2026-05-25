@@ -38,7 +38,12 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateText, Output, stepCountIs } from "ai";
 
 import { route, auditRoutedGuideline } from "@/lib/router";
-import { getGuideline, getDoseRule } from "@/registry/guidelines";
+import { decideCollapse } from "@/lib/collapse";
+import {
+  getGuideline,
+  getDoseRule,
+  buildConditionGuidelineMap,
+} from "@/registry/guidelines";
 import {
   calculate_dose,
   isRefusal,
@@ -212,6 +217,37 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const facts = caseState.extracted_facts;
+
+  // ===================================================================
+  // STEP 1.5 — DEFENSE-IN-DEPTH COLLAPSE GATE.
+  //
+  // The PRIMARY decider is turn1.5: in the normal flow it has already collapsed
+  // the differential before turn2 runs (epiglottitis demoted → plan, or the case
+  // abstained at turn1.5 and never reaches turn2 at all). This gate is PURE
+  // defense-in-depth: a hand-crafted POST that skips turn1.5 must not be able to
+  // dose past an unresolved must-not-miss. We run decideCollapse with the SAME
+  // map builder used by turn1.5 (one normalisation, no drift).
+  //
+  // Gate fires ONLY on `abstain` — ask and plan fall through unchanged so the
+  // post-turn1.5 happy path (croup differential already collapsed to plan by
+  // turn1.5) is unaffected. If the gate fires: ZERO model calls, amber abstention.
+  // ===================================================================
+  {
+    const collapseMap = buildConditionGuidelineMap();
+    const collapseDecision = decideCollapse(
+      caseState.differential,
+      collapseMap,
+      caseState.round,
+    );
+    if (collapseDecision.action === "abstain") {
+      console.log(
+        `[turn2:gate] defense-in-depth collapse gate fired: action=abstain, round=${caseState.round} — returning abstention, ZERO model calls`,
+      );
+      return NextResponse.json(
+        abstentionResponse(fromRefusalDecision(noGuidelineAbstention())),
+      );
+    }
+  }
 
   // ===================================================================
   // EXECUTION — STEP 2: SELECT the guideline the clinician CLICKED.

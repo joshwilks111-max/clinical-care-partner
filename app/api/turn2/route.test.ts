@@ -59,7 +59,24 @@ function makeCaseState(overrides: Partial<CaseState> = {}): CaseState {
       profession: null,
       setting: null,
     },
-    differential: { conditions: [], candidate_guidelines: [] },
+    // Default differential collapses to `plan` via decideCollapse rule 5:
+    // one treatable mapped condition (croup → starship-croup-2020), no
+    // unresolved must-not-miss. This keeps existing happy-path tests intact
+    // after the defense-in-depth gate was added (an empty conditions array
+    // triggers rule 1 → abstain and would otherwise break every dose test).
+    differential: {
+      conditions: [
+        {
+          name: "Croup",
+          likelihood: "likely",
+          positive_evidence: [],
+          negative_evidence: [],
+        },
+      ],
+      candidate_guidelines: [
+        { guideline_id: "starship-croup-2020", label: "Croup (Starship NZ)" },
+      ],
+    },
     selected_condition: "croup",
     selected_guideline_id: "starship-croup-2020",
     selected_severity: "moderate",
@@ -501,6 +518,44 @@ describe("POST /api/turn2 — technical error (red) vs success vs incomplete (am
     // The TOOL owns the number: 14.2 × 0.15 = 2.13, NOT the model's 50.
     expect(body.dose?.dose_mg).toBe(2.13);
     expect(body.dose?.dose_mg).not.toBe(50);
+  });
+
+  it("defense-in-depth: hand-crafted POST with unresolved must-not-miss abstains with 0 model calls", async () => {
+    // Collapse rule 2: a must-not-miss WITH positive evidence → abstain.
+    // The clinician's selected_guideline_id is the real croup id, so the
+    // existing guideline-selection checks would pass — but the gate fires FIRST,
+    // before ANY model call. This proves the gate isn't client-only: you cannot
+    // skip turn1.5 and dose past a dangerous must-not-miss via a raw POST.
+    // outputQueue is intentionally empty: if the gate were removed the route
+    // would call generateText with an empty queue and this test would throw,
+    // which is the non-vacuous proof the gate fired.
+    const res = await POST(
+      postCaseState(
+        makeCaseState({
+          differential: {
+            conditions: [
+              {
+                name: "Epiglottitis",
+                likelihood: "must-not-miss",
+                positive_evidence: ["drooling", "tripod posture"],
+                negative_evidence: [],
+              },
+            ],
+            candidate_guidelines: [],
+          },
+          selected_guideline_id: "starship-croup-2020",
+        }),
+      ),
+    );
+    const body = (await res.json()) as {
+      status?: string;
+      reason?: string;
+      source?: string;
+    };
+    expect(body.status).toBe("abstention");
+    expect(body.reason).toBe("no_matching_guideline");
+    // NON-VACUOUS: gate fired before any model call.
+    expect(generateTextCalls.length).toBe(0);
   });
 
   it("null weight in a hand-crafted CaseState → dose-tool GUARD-7 abstains (implausible_weight), STEP B never runs", async () => {
