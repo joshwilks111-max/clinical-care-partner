@@ -19,6 +19,7 @@ LLM-judge metric, on a different model." We cite the line, then the leash.
 | Whole-document / lexical surfacing | 2605.15184 (PwC grep) | Lexical search surfaces verbatim strings without an embedding bottleneck | A blanket "lexical > vector" claim (vector wins 5/10 programmatic; inline-only result) |
 | Large-corpus retrieval is the deferred path | 2605.05242 (DCI) | Agentic retrieval is the answer *at large corpus scale* | Anything about a 2-doc corpus (smallest tested = 50,220 docs) |
 | Deterministic dose tool (LLM never does math) | npj Digital Medicine | Tool-based calc = 5.5–13× fewer incorrect responses vs in-context arithmetic | (headline; the strongest single evidence line for the safety spine) |
+| Abstention-as-safety / investigate-before-abstain (whole thesis) | 2509.24816 (KnowGuard) | The *paradigm* — abstain on insufficient evidence; check knowledge boundaries against **external** medical evidence, not model self-assessment | Their *mechanism* (systematic knowledge-graph exploration over a large medical space) — that is our **deferred** large-corpus path, not the v1 whole-doc build |
 
 The token-budget argument is the *load-bearing* reason for whole-document retrieval (2 × ~5K tokens
 ≈ 10K, fits the window with room to spare). The retrieval papers are cited **consistent-with**, not
@@ -77,6 +78,37 @@ the design still stands because the real reason never depended on them.
 - **Caveat:** None load-bearing — this is the **single strongest evidence line for the deterministic
   dose tool** (the LLM is structurally blocked from generating a dose; it picks the rule by id, the
   tool owns every number and does the math).
+
+### 2509.24816 — KnowGuard (independent corroboration of the whole thesis)
+- **Source:** Dang, Chen, Su, Noori, Arango, Vittor, Long, Du, **Zitnik**, Heng —
+  "KnowGuard: Knowledge-Driven Abstention for Multi-Round Clinical Reasoning,"
+  arXiv:2509.24816 (submitted 29 Sep 2025; under review). CUHK + Harvard Medical School.
+- **Verbatim:** "physicians refrain from making decisions when patient information is insufficient.
+  This behavior, known as abstention, is a critical safety mechanism preventing potentially harmful
+  misdiagnoses." And: "existing LLMs … frequently provid[e] overconfident responses despite incomplete
+  information … conventional abstention methods rel[y] solely on model self-assessments, which lack
+  systematic strategies to identify knowledge boundaries with external medical evidences."
+- **Headline result:** "KnowGuard outperforms state-of-the-art abstention approaches, improving
+  diagnostic accuracy by 3.93% while reducing unnecessary interaction by 7.27 turns on average."
+- **Why it's here (and why it's *corroboration*, not a design-decision paper):** This is independent
+  validation — from a Harvard Medical School / Zitnik-lab group, under review — of the exact paradigm
+  this PoC was designed around, **arrived at independently**: (1) **abstention is the safety mechanism**
+  (our pre-LLM refusal gate + no-matching-guideline abstain — "the dangerous failure is the quiet one");
+  (2) **investigate *before* abstain** — don't trust model self-assessment; check against **external**
+  evidence (our differential reasons over positive **and absent** evidence, and abstention fires on
+  *empty* retrieved context, not a confidence vibe); (3) **knowledge boundaries come from external
+  medical evidence** (our committed guideline registry is that external authority — the LLM never
+  self-certifies a dose).
+- **Caveat (the boundary — same discipline as every card above):** KnowGuard's *implementation* is
+  **systematic knowledge-graph exploration** with ranked evidence evaluation over a large medical
+  knowledge space. We deliberately do **not** build that — at a **2-document corpus** it is
+  over-engineering; whole-document retrieval is correct (token budget, see above). KnowGuard is
+  therefore cited as the academic reference for **two deliberately-deferred items**: *Scale retrieval*
+  (their graph exploration is what our deferred large-corpus path becomes) and the
+  *differential-collapse loop* (their multi-round *investigate*-before-abstain is the active-gathering
+  version of our v1, which abstains on absent evidence but does not yet loop to gather it). Naming the
+  frontier paper as the destination for our deferred items **is** the take-home's thesis — judgment
+  about what *not* to build in 4 days — made concrete.
 
 ---
 

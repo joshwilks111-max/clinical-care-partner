@@ -353,7 +353,9 @@ signal. (Blast radius = a take-home demo, not a deployed clinical system.)
 - **Deterministic severity mapping** — encode the guideline's severity criteria as a typed rule. Scale /
   regulatory hardening; brittle on free-text for a PoC.
 - **Differential-collapse loop** — ambiguous note → ask a discriminating question → narrow the dx. The
-  product vision; named in the Loom, stubbed in code.
+  product vision; named in the Loom, stubbed in code. This is the active *investigate*-before-abstain loop
+  that KnowGuard (arXiv:2509.24816, HMS/Zitnik, under review) formalises — v1 abstains on absent evidence
+  but does not yet loop to gather it. See `research/papers.md`.
 - **LLM-as-judge eval (Layer 2)** — clinically-framed rubric for applicability (faithfulness's blind
   spot). Hook left in `tests/evals/`; deterministic assertions remain the true gate. (If built, use
   domain-framed judge prompts or inherit the paper's ~4% misclassification rate; judge output
@@ -364,7 +366,8 @@ signal. (Blast radius = a take-home demo, not a deployed clinical system.)
 - **Live-consult transcription + real-time collapse** — the product vision; 6-month build, not 4-day.
 - **3rd guideline / non-dose skill** (e.g. interaction-check) — registry proven; data-entry work.
 - **Scale retrieval** — live guideline service / data partnership. We load whole docs because the corpus
-  is tiny; at scale, agentic retrieval over a large corpus (see `research/papers.md`).
+  is tiny; at scale, agentic retrieval over a large corpus — e.g. KnowGuard's systematic knowledge-graph
+  exploration (arXiv:2509.24816) is exactly this path (see `research/papers.md`).
 - **Production privacy** — external LLM API + real patient data = GDPR/HIPAA exposure; on-prem / no-PHI
   for production. Moot for a synthetic-note demo; noted as a limitation.
 
