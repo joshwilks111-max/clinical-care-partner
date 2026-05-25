@@ -53,6 +53,36 @@ export type CaseState = {
 };
 
 /**
+ * Narrow + validate an unknown value as a CaseState enough to drive the collapse
+ * core and both route handlers (turn1.5 + turn2). `round` and `discriminating_qa`
+ * are optional — a pre-turn1.5 POST may omit them; callers normalise with
+ * withDefaultedCounters. `differential.conditions` is validated as an array;
+ * the nested condition shape is not checked (collapse tolerates an empty/odd array
+ * by abstaining). weight_kg must be null or a number (not a string from a bad UI).
+ */
+export function isCaseStateLike(v: unknown): v is CaseState {
+  if (typeof v !== "object" || v === null) return false;
+  const c = v as Record<string, unknown>;
+  const facts = c.extracted_facts;
+  if (typeof facts !== "object" || facts === null) return false;
+  const f = facts as Record<string, unknown>;
+  const weightOk = f.weight_kg === null || typeof f.weight_kg === "number";
+  const differentialOk =
+    typeof c.differential === "object" &&
+    c.differential !== null &&
+    Array.isArray((c.differential as Record<string, unknown>).conditions);
+  return (
+    typeof c.note_hash === "string" &&
+    weightOk &&
+    differentialOk &&
+    (c.selected_condition === null ||
+      typeof c.selected_condition === "string") &&
+    (c.selected_guideline_id === null ||
+      typeof c.selected_guideline_id === "string")
+  );
+}
+
+/**
  * SHA-256 hex digest of the raw note. Deterministic, dependency-light
  * (node:crypto) — pins provenance so turn 2 can verify it is acting on the same
  * note turn 1 saw, without ever re-sending the untrusted text to the model.

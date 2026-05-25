@@ -56,7 +56,11 @@ import { NextResponse } from "next/server";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateText, Output, stepCountIs } from "ai";
 
-import { decideCollapse, applyAnswer } from "@/lib/collapse";
+import {
+  decideCollapse,
+  applyAnswer,
+  type ConditionGuidelineMap,
+} from "@/lib/collapse";
 import { buildConditionGuidelineMap } from "@/registry/guidelines";
 import { noGuidelineAbstention } from "@/lib/refusal-gate";
 import { withTransientRetry } from "@/lib/retry";
@@ -67,7 +71,7 @@ import {
   buildQuestionUserPrompt,
   type ConfirmedFactsSummary,
 } from "@/prompts/turn1.5";
-import type { CaseState } from "@/lib/case-state";
+import { isCaseStateLike, type CaseState } from "@/lib/case-state";
 
 // Node runtime (NOT edge): the SDK needs it. maxDuration 300s matches turn1/turn2.
 export const runtime = "nodejs";
@@ -211,34 +215,6 @@ function abstentionResponse(a: Abstention): AbstentionResponse {
   };
 }
 
-/**
- * Narrow + validate the posted CaseState enough to drive the collapse core.
- * Mirrors turn2's isCaseStateLike: requires note_hash + a differential whose
- * `conditions` is an array. `round` is optional (default 0 if missing/non-number)
- * and `discriminating_qa` defaults to [] — a pre-turn1.5 POST may omit them.
- */
-function isCaseStateLike(v: unknown): v is CaseState {
-  if (typeof v !== "object" || v === null) return false;
-  const c = v as Record<string, unknown>;
-  const facts = c.extracted_facts;
-  if (typeof facts !== "object" || facts === null) return false;
-  const f = facts as Record<string, unknown>;
-  const weightOk = f.weight_kg === null || typeof f.weight_kg === "number";
-  const differentialOk =
-    typeof c.differential === "object" &&
-    c.differential !== null &&
-    Array.isArray((c.differential as Record<string, unknown>).conditions);
-  return (
-    typeof c.note_hash === "string" &&
-    weightOk &&
-    differentialOk &&
-    (c.selected_condition === null ||
-      typeof c.selected_condition === "string") &&
-    (c.selected_guideline_id === null ||
-      typeof c.selected_guideline_id === "string")
-  );
-}
-
 /** Normalise a CaseState's server-owned counters: a hand-crafted / pre-turn1.5
  *  POST may omit round / discriminating_qa, so default them defensively. */
 function withDefaultedCounters(c: CaseState): CaseState {
@@ -344,7 +320,7 @@ export async function POST(req: Request): Promise<Response> {
 
 async function handleDecide(
   caseState: CaseState,
-  map: ReturnType<typeof buildConditionGuidelineMap>,
+  map: ConditionGuidelineMap,
 ): Promise<Response> {
   // EXECUTION: the deterministic core decides — NOT the model.
   const decision = decideCollapse(caseState.differential, map, caseState.round);
@@ -387,8 +363,18 @@ async function handleDecide(
   // PHRASES one plain-text discriminating question from the FIXED target +
   // discriminators (it does not pick them; collapse did). Sanitization +
   // data-wrapping happen inside the prompt builders (prompts/turn1.5.ts).
-  const target = decision.target ?? "";
-  const discriminators = decision.discriminators ?? [];
+  //
+  // Collapse-contract-violation guard (fail toward stopping): decideCollapse
+  // guarantees target + discriminators are present on action==="ask", but if
+  // the contract is ever violated we must NOT call the model with empty inputs.
+  if (!decision.target || !decision.discriminators?.length) {
+    console.log(
+      `[turn1.5:decide] collapse contract violation: ask with no target/discriminators → abstain`,
+    );
+    return NextResponse.json(noGuidelineResponse());
+  }
+  const target = decision.target;
+  const discriminators = decision.discriminators;
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   const anthropic = createAnthropic({
@@ -446,7 +432,7 @@ async function handleDecide(
 
 function handleAnswer(
   caseState: CaseState,
-  map: ReturnType<typeof buildConditionGuidelineMap>,
+  map: ConditionGuidelineMap,
   answer: DiscriminatorAnswer,
 ): Response {
   // The answer is to the question asked about the must-not-miss target at the

@@ -66,7 +66,7 @@ import {
   buildPlanUserPrompt,
   type ComputedDoseForPrompt,
 } from "@/prompts/turn2";
-import type { CaseState } from "@/lib/case-state";
+import { isCaseStateLike, type CaseState } from "@/lib/case-state";
 
 // Node runtime (NOT edge): the SDK needs it. maxDuration 300s gives the two
 // opus-4-7 calls headroom. (DESIGN.md Stack section — matches turn1.)
@@ -171,34 +171,6 @@ function normalizeForQuoteMatch(s: string): string {
     .replace(/\s+/g, " ")
     .replace(/^[\s"'“”.,;:–—-]+|[\s"'“”.,;:–—-]+$/g, "")
     .trim();
-}
-
-/** Narrow + validate the posted CaseState enough to drive turn 2 safely. */
-function isCaseStateLike(v: unknown): v is CaseState {
-  if (typeof v !== "object" || v === null) return false;
-  const c = v as Record<string, unknown>;
-  const facts = c.extracted_facts;
-  if (typeof facts !== "object" || facts === null) return false;
-  const f = facts as Record<string, unknown>;
-  const weightOk = f.weight_kg === null || typeof f.weight_kg === "number";
-  // Validate differential.conditions is an array. turn1.5 and turn2's gate both
-  // read differential.conditions; an absent/non-array differential is a malformed
-  // CaseState. We do NOT validate the nested condition shape — collapse tolerates
-  // an empty/odd array by abstaining. round/discriminating_qa are NOT required
-  // here: a turn2 POST from the pre-turn1.5 flow may omit them; treat missing as 0/[].
-  const differentialOk =
-    typeof c.differential === "object" &&
-    c.differential !== null &&
-    Array.isArray((c.differential as Record<string, unknown>).conditions);
-  return (
-    typeof c.note_hash === "string" &&
-    weightOk &&
-    differentialOk &&
-    (c.selected_condition === null ||
-      typeof c.selected_condition === "string") &&
-    (c.selected_guideline_id === null ||
-      typeof c.selected_guideline_id === "string")
-  );
 }
 
 // ---------------------------------------------------------------------------
