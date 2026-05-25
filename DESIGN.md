@@ -121,8 +121,10 @@ chatbot round-trips, each independently reproducible).
   asserts the **routed `guideline_id` matches the confirmed condition** (wrong-guideline audit — the guard
   stays deferred, the audit passes). Run via `npm run eval` (wraps `npx promptfoo`), named checks not
   aggregate.
-- **One model** — `claude-opus-4-7`, `temperature: 0` for demo reproducibility (the dose is already
-  deterministic via the tool; this stabilises the differential + prose for the on-camera demo).
+- **One model** — `claude-opus-4-7`. (Spike-corrected 2026-05-25: opus-4-7 does NOT accept `temperature`,
+  so demo reproducibility rests on the deterministic dose tool + Zod-structured output, not a temperature
+  setting — see the Stack section. The dose is exact via the tool regardless; the differential/prose are
+  stabilised by the structured-output contract + pinned demo notes.)
 
 ### Calculator safety spec (`calculate_dose`)
 Guards are labelled **[tested]** (has a demo/eval/unit case) or **[specified]** (in the spec, not
@@ -294,18 +296,33 @@ rounding, min_mg floor, Zod parse failure → red technical state). `npm run eva
 
 ---
 
-## Stack — decided at a 30-min spike
+## Stack — RESOLVED by the spike (2026-05-25)
 
-The design is stack-neutral. **First build action:** a 30-min spike — a single **turn-2-shaped** call
-(tool-call + `Output.object` + `stopWhen` + one deliberately-malformed tool-call) on `claude-opus-4-7`.
-Clean → keep Vercel AI SDK 6 (gains streaming UI + one-line provider swap for the eval). Friction → drop to
-`@anthropic-ai/sdk` direct in a plain Next.js route (tools + structured output, zero carve-outs).
-**Hard timebox + pre-scaffolded fallback:** if the spike isn't clean in 30 min, default to direct SDK and
-move on — a failed spike costs minutes, not hours. **After the spike, replace this section with one line:
-"Shipped stack: Next.js + [chosen]. Why: [spike result]."** so the README/diagram never describe the wrong
-stack. (The pre-LLM refusal demo ships day 1 regardless — it needs no SDK and no model.) Re-verify all API
-names at build (SDK moves weekly): `inputSchema` not `parameters`; `stopWhen: stepCountIs(10)` not `maxSteps`;
-`Output.object`; `runtime='nodejs'`, `maxDuration=300`, Fluid Compute not edge.
+**Shipped stack: Next.js 16 + Vercel AI SDK 6 (`ai@6.0.191` + `@ai-sdk/anthropic@3.0.79`) on `claude-opus-4-7`.**
+Why: the spike (`spike/turn2-shape.ts`) ran the turn-2 shape live and it was **clean** — tool-call +
+structured output + `stopWhen` all work together on opus-4-7 (tool fired, `Output.object` parsed
+`{dose_mg:2.13, severity:"moderate"}` against Zod, a thrown `tool.execute` surfaced as a catchable
+`tool-error` part — so Task 7's red technical-error state is reachable). Keeps streaming UI + AI Elements
+drop-in + one-line provider swap for the eval. (The pre-LLM refusal demo ships regardless — no SDK, no model.)
+
+**Build-facts the spike pinned (use these verbatim in Tasks 6/7 — they correct stale assumptions):**
+- Tool def: `tool({ inputSchema })` (NOT `parameters`). `stopWhen: stepCountIs(n)` (NOT `maxSteps`).
+- Structured output: the export is **`Output`**, used as `Output.object({ schema })`, but it is passed to
+  `generateText` under the option key **`experimental_output:`** (export name and option key differ — don't
+  expect an `experimental_output` export).
+- **`claude-opus-4-7` does NOT support `temperature`** — the SDK warns and ignores it. **Do not send
+  `temperature`.** Demo reproducibility now rests on the deterministic dose tool + structured output (Zod),
+  not a temperature knob. (Supersedes the earlier `temperature: 0` line elsewhere in this doc.)
+- Provider base URL: pin `createAnthropic({ apiKey, baseURL: "https://api.anthropic.com/v1" })` OR ensure no
+  ambient `ANTHROPIC_BASE_URL` without `/v1` leaks in (a bare base URL → `.../messages` 404). Routes use
+  `runtime='nodejs'`, `maxDuration=300`, Fluid Compute (NOT edge).
+- `.env.local` must be UTF-8 **without BOM** (a BOM exposes the key as `﻿ANTHROPIC_API_KEY`).
+
+**Why Opus 4.7 (not Gemini) for v1:** Gemini 3.5 Pro isn't released (Flash only, GA 2026-05-19); and on
+the Vercel SDK, tools+structured-output together works only on the Gemini 3 *series* — non-3 Gemini
+models throw a mime-type error, and it's UNCONFIRMED whether GA `gemini-3.5-flash` is covered. The
+turn-2 flow does exactly tools+structured-output. Opus 4.7 does it clean today (spike-confirmed). Gemini
+stays an EVAL challenger (build provider-flexible; let data decide). Detail + sources in `research/papers.md`.
 
 **Why Opus 4.7 (not Gemini) for v1:** Gemini 3.5 Pro isn't released (Flash only, GA 2026-05-19); and on
 the Vercel SDK, tools+structured-output together works only on the Gemini 3 *series* — non-3 Gemini
