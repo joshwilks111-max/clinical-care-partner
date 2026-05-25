@@ -132,10 +132,10 @@ export async function POST(req: Request): Promise<Response> {
   // note is wrapped as DATA via prompts/turn1.ts (the enforced trust boundary).
   // ===================================================================
 
-  // env plumbing (mirrors the spike): tolerate a BOM-prefixed key name and pin
-  // /v1 so an ambient ANTHROPIC_BASE_URL without /v1 can't cause a 404.
-  const apiKey =
-    process.env.ANTHROPIC_API_KEY || process.env["﻿ANTHROPIC_API_KEY"];
+  // env plumbing (mirrors the spike): pin /v1 so an ambient ANTHROPIC_BASE_URL
+  // without /v1 can't cause a 404. (The .env.local BOM was stripped, so the key
+  // reads as ANTHROPIC_API_KEY normally — no BOM-prefixed fallback needed.)
+  const apiKey = process.env.ANTHROPIC_API_KEY;
   const anthropic = createAnthropic({
     apiKey,
     baseURL: "https://api.anthropic.com/v1",
