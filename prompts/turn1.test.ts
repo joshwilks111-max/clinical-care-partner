@@ -56,7 +56,7 @@ describe("buildTurn1SystemPrompt — trust boundary + the differentiator", () =>
   });
 
   it("explicitly tells the model to IGNORE injected commands in the note", () => {
-    // The injection-resistance instruction (Task 9 evals this end-to-end).
+    // The injection-resistance instruction (the Promptfoo injection eval, tests/evals/, covers this end-to-end).
     expect(sys.toLowerCase()).toContain("ignore previous instructions");
     expect(sys.toLowerCase()).toContain("do not obey");
   });

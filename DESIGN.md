@@ -303,7 +303,7 @@ rounding, min_mg floor, Zod parse failure → red technical state). `npm run eva
 Why: a throwaway 30-min spike ran the turn-2 shape live and it was **clean** — tool-call +
 structured output + `stopWhen` all work together on opus-4-7 (tool fired, `Output.object` parsed
 `{dose_mg:2.13, severity:"moderate"}` against Zod, a thrown `tool.execute` surfaced as a catchable
-`tool-error` part — so Task 7's red technical-error state is reachable). Keeps streaming UI + AI Elements
+`tool-error` part — so the turn-2 apply pipeline's red technical-error state is reachable). Keeps streaming UI + AI Elements
 drop-in + one-line provider swap for the eval. (The pre-LLM refusal demo ships regardless — no SDK, no model.)
 
 **Build-facts the spike pinned (use these verbatim in Tasks 6/7 — they correct stale assumptions):**
