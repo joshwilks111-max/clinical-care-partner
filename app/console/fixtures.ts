@@ -184,8 +184,7 @@ export const FIXTURE_TURN2_OK: Turn2Response = {
         source_section:
           "Croup — Corticosteroid treatment (dexamethasone dosing)",
         source_version: "Starship NZ Clinical Guideline, 2020",
-        source_url:
-          "https://starship.org.nz/guidelines/croup/ [CONFIRM URL AT BUILD]",
+        source_url: "https://www.starship.org.nz/guidelines/croup/",
         quote:
           "First-line (mild–moderate): dexamethasone 0.15 mg/kg ORALLY, single dose.",
       },
@@ -193,8 +192,7 @@ export const FIXTURE_TURN2_OK: Turn2Response = {
         text: "Observe after treatment; discharge once stridor at rest has settled.",
         source_section: "Croup — Disposition / monitoring",
         source_version: "Starship NZ Clinical Guideline, 2020",
-        source_url:
-          "https://starship.org.nz/guidelines/croup/ [CONFIRM URL AT BUILD]",
+        source_url: "https://www.starship.org.nz/guidelines/croup/",
         quote:
           "Observe after treatment; most children with mild–moderate croup can be discharged once stridor at rest has settled.",
       },
@@ -247,8 +245,7 @@ export const FIXTURE_TURN2_CAPPED: Turn2Response = {
         source_section:
           "Croup — Corticosteroid treatment (dexamethasone dosing)",
         source_version: "Starship NZ Clinical Guideline, 2020",
-        source_url:
-          "https://starship.org.nz/guidelines/croup/ [CONFIRM URL AT BUILD]",
+        source_url: "https://www.starship.org.nz/guidelines/croup/",
         quote: "Maximum single dose: 12 mg (cap applies to all severities).",
       },
     ],
@@ -299,8 +296,7 @@ export const FIXTURE_TURN2_INCOMPLETE: Turn2Response = {
         source_section:
           "Croup — Corticosteroid treatment (dexamethasone dosing)",
         source_version: "Starship NZ Clinical Guideline, 2020",
-        source_url:
-          "https://starship.org.nz/guidelines/croup/ [CONFIRM URL AT BUILD]",
+        source_url: "https://www.starship.org.nz/guidelines/croup/",
         quote:
           "First-line (mild–moderate): dexamethasone 0.15 mg/kg ORALLY, single dose.",
       },

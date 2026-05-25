@@ -81,10 +81,10 @@ function RecommendationBlock({ rec }: { rec: PlanRecommendationType }) {
           <span className="text-muted-foreground"> · {rec.source_version}</span>
         </div>
       </blockquote>
-      {/* source_url carries a [CONFIRM URL AT BUILD] placeholder — render as-is
-          (Task 10 resolves the real URLs); the Source link is clickable and
-          ALWAYS visible (D7: every claim's source is one glance away, not hidden
-          behind a collapse toggle). Uses the AI Elements `Source` leaf. */}
+      {/* source_url is the resolved registry citation URL — rendered verbatim.
+          The Source link is clickable and ALWAYS visible (D7: every claim's
+          source is one glance away, not hidden behind a collapse toggle).
+          Uses the AI Elements `Source` leaf. */}
       <Source href={rec.source_url} title={rec.source_url} />
     </div>
   );

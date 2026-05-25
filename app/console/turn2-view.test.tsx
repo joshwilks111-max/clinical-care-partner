@@ -44,12 +44,14 @@ describe("Turn2View — status:ok", () => {
     expect(
       document.querySelector('[data-provenance="guideline-citation"]'),
     ).toBeInTheDocument();
-    // source_url renders AS-IS (placeholder included), as a clickable link.
+    // source_url renders the resolved registry citation as a clickable link.
     const link = document.querySelector(
       'a[href*="starship.org.nz"]',
     ) as HTMLAnchorElement | null;
     expect(link).not.toBeNull();
-    expect(link?.getAttribute("href")).toContain("[CONFIRM URL AT BUILD]");
+    expect(link?.getAttribute("href")).toBe(
+      "https://www.starship.org.nz/guidelines/croup/",
+    );
   });
 
   it("shows the green completeness card (all fields present) — not the amber fired one", () => {

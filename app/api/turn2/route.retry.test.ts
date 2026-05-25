@@ -84,8 +84,7 @@ const completeCroupPlan = {
       text: "Give oral dexamethasone 2.13 mg as a single dose.",
       source_section: "Croup — Corticosteroid treatment (dexamethasone dosing)",
       source_version: "Starship NZ Clinical Guideline, 2020",
-      source_url:
-        "https://starship.org.nz/guidelines/croup/ [CONFIRM URL AT BUILD]",
+      source_url: "https://www.starship.org.nz/guidelines/croup/",
       quote: "dexamethasone 0.15 mg/kg ORALLY, single dose",
     },
   ],
