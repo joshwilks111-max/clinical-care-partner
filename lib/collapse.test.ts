@@ -252,4 +252,37 @@ describe("applyAnswer — deterministic evidence flip (immutable, invents nothin
     expect(out.conditions).toEqual(fixture.conditions);
     expect(out.candidate_guidelines).toEqual(fixture.candidate_guidelines);
   });
+
+  it("all-unknown present=false answer does NOT demote the must-not-miss (stays unresolved → abstain)", () => {
+    // SAFETY GUARD (pins applyAnswer's `toMove.size > 0` demote condition):
+    // an ABSENT answer naming only findings in NEITHER arm flips nothing — the
+    // must-not-miss is NOT ruled out, so its band must stay must-not-miss and
+    // downstream must abstain. A refactor dropping the guard would demote to
+    // "possible" here and (with no unresolved must-not-miss) PLAN — exactly the
+    // false-negative this test forbids. Asserts .likelihood DIRECTLY (the rest of
+    // the suite only verifies the band indirectly via the chosen action).
+    const out = applyAnswer(
+      fixture,
+      "Epiglottitis",
+      ["nonexistent-symptom"],
+      false,
+    );
+    // guard: an unexamined/unknown answer must NOT rule out a must-not-miss
+    expect(out.conditions[1].likelihood).toBe("must-not-miss");
+    expect(out.conditions[1].positive_evidence).toEqual([]);
+    expect(decideCollapse(out, map, 1).action).toBe("abstain");
+  });
+
+  it("the demote-HAPPENS path: an ABSENT answer that flips real discriminators demotes must-not-miss → possible", () => {
+    // The other side of the guard, pinned directly: when the answer DOES name
+    // findings present in the negative arm (toMove non-empty), the band is
+    // demoted out of must-not-miss to "possible" so downstream can plan.
+    const out = applyAnswer(
+      fixture,
+      "Epiglottitis",
+      ["drooling", "tripod posture", "muffled voice"],
+      false,
+    );
+    expect(out.conditions[1].likelihood).toBe("possible");
+  });
 });
