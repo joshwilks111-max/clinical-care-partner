@@ -29,6 +29,7 @@ import { refusalGate } from "@/lib/refusal-gate";
 import { buildCaseState } from "@/lib/case-state";
 import { Turn1Output } from "@/lib/schemas";
 import { buildTurn1SystemPrompt, buildTurn1UserPrompt } from "@/prompts/turn1";
+import { withTransientRetry } from "@/lib/retry";
 
 // Node runtime (NOT edge): the SDK + node:crypto (CaseState hash) need it.
 // maxDuration 300s gives the opus-4-7 call headroom. (DESIGN.md Stack section.)
@@ -143,20 +144,27 @@ export async function POST(req: Request): Promise<Response> {
 
   let parsed: Turn1Output;
   try {
-    const result = await generateText({
-      model: anthropic(MODEL),
-      // NO temperature: opus-4-7 rejects/ignores it (the SDK warns).
-      // Reproducibility comes from structured output + the deterministic
-      // downstream tool, not a temperature knob. (DESIGN.md Stack section.)
-      maxOutputTokens: MAX_OUTPUT_TOKENS,
-      stopWhen: stepCountIs(1), // single-shot structured extraction; no tools.
-      system: buildTurn1SystemPrompt(),
-      prompt: buildTurn1UserPrompt(note),
-      experimental_output: Output.object({ schema: Turn1Output }),
-    });
+    // Bounded transient-only retry: a TRANSIENT model/SDK miss (no-output /
+    // overloaded / 429 / 529 / network) is re-rolled up to twice with short
+    // backoff. A Zod parse failure (ZodError) is non-transient → it is re-thrown
+    // on the first attempt with ZERO retries, falling through to the SAME red
+    // technical-error catch below. Retry NEVER masks a real failure.
+    parsed = await withTransientRetry(async () => {
+      const result = await generateText({
+        model: anthropic(MODEL),
+        // NO temperature: opus-4-7 rejects/ignores it (the SDK warns).
+        // Reproducibility comes from structured output + the deterministic
+        // downstream tool, not a temperature knob. (DESIGN.md Stack section.)
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+        stopWhen: stepCountIs(1), // single-shot structured extraction; no tools.
+        system: buildTurn1SystemPrompt(),
+        prompt: buildTurn1UserPrompt(note),
+        experimental_output: Output.object({ schema: Turn1Output }),
+      });
 
-    // Validate the structured output (a parse failure → RED technical state).
-    parsed = Turn1Output.parse(result.experimental_output);
+      // Validate the structured output (a parse failure → RED technical state).
+      return Turn1Output.parse(result.experimental_output);
+    });
   } catch (e) {
     // Model unreachable, SDK error, or Zod parse failure — all RED technical.
     const err: TechnicalErrorResponse = {

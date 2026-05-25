@@ -46,6 +46,7 @@ import {
 } from "@/tools/calculate_dose";
 import { checkCompleteness, type SlotRecord } from "@/lib/completeness";
 import { noGuidelineAbstention } from "@/lib/refusal-gate";
+import { withTransientRetry } from "@/lib/retry";
 import {
   PlanOutput,
   buildPlanOutputSchema,
@@ -249,16 +250,22 @@ export async function POST(req: Request): Promise<Response> {
   // ===================================================================
   let classification: SeverityClassification;
   try {
-    const result = await generateText({
-      model: anthropic(MODEL),
-      // NO temperature: opus-4-7 ignores it. (DESIGN.md Stack section.)
-      maxOutputTokens: SEVERITY_MAX_OUTPUT_TOKENS,
-      stopWhen: stepCountIs(1), // single-shot bounded classification; no tools.
-      system: buildSeveritySystemPrompt(guideline),
-      prompt: buildSeverityUserPrompt(caseState),
-      experimental_output: Output.object({ schema: SeverityClassification }),
+    // Bounded transient-only retry (STEP A). A no-output / overloaded / 429 /
+    // 529 / network miss is re-rolled up to twice with short backoff; a Zod
+    // parse failure is non-transient → re-thrown on the first attempt with ZERO
+    // retries, falling through to the SAME red catch below.
+    classification = await withTransientRetry(async () => {
+      const result = await generateText({
+        model: anthropic(MODEL),
+        // NO temperature: opus-4-7 ignores it. (DESIGN.md Stack section.)
+        maxOutputTokens: SEVERITY_MAX_OUTPUT_TOKENS,
+        stopWhen: stepCountIs(1), // single-shot bounded classification; no tools.
+        system: buildSeveritySystemPrompt(guideline),
+        prompt: buildSeverityUserPrompt(caseState),
+        experimental_output: Output.object({ schema: SeverityClassification }),
+      });
+      return SeverityClassification.parse(result.experimental_output);
     });
-    classification = SeverityClassification.parse(result.experimental_output);
   } catch (e) {
     const err: TechnicalErrorResponse = {
       status: "error",
@@ -322,19 +329,24 @@ export async function POST(req: Request): Promise<Response> {
     // (a bare record lets it return {} and skip them all). The result is then
     // re-validated against the wire PlanOutput shape.
     const planSchema = buildPlanOutputSchema(guideline);
-    const result = await generateText({
-      model: anthropic(MODEL),
-      maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS,
-      stopWhen: stepCountIs(1), // single-shot constrained synthesis; no tools.
-      system: buildPlanSystemPrompt(guideline),
-      prompt: buildPlanUserPrompt(
-        caseState,
-        classification.severity_row,
-        doseForPrompt,
-      ),
-      experimental_output: Output.object({ schema: planSchema }),
+    // Bounded transient-only retry (STEP B). Same scoping as STEP A: only a
+    // transient model/SDK miss is re-rolled; a Zod parse failure is
+    // non-transient → re-thrown immediately to the SAME red catch below.
+    plan = await withTransientRetry(async () => {
+      const result = await generateText({
+        model: anthropic(MODEL),
+        maxOutputTokens: PLAN_MAX_OUTPUT_TOKENS,
+        stopWhen: stepCountIs(1), // single-shot constrained synthesis; no tools.
+        system: buildPlanSystemPrompt(guideline),
+        prompt: buildPlanUserPrompt(
+          caseState,
+          classification.severity_row,
+          doseForPrompt,
+        ),
+        experimental_output: Output.object({ schema: planSchema }),
+      });
+      return PlanOutput.parse(result.experimental_output);
     });
-    plan = PlanOutput.parse(result.experimental_output);
   } catch (e) {
     const err: TechnicalErrorResponse = {
       status: "error",

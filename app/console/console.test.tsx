@@ -47,7 +47,10 @@ describe("Console — demo buttons (X5, no typing)", () => {
 
 describe("Console — refusal flow (amber)", () => {
   it("POSTs the prefilled note to /api/turn1 and renders an amber refusal", async () => {
-    const fetchMock = vi.fn(async () =>
+    // Type the mock with fetch's own signature so the recorded call args
+    // (fetchMock.mock.calls[0]) are a proper [input, init?] tuple — not the
+    // zero-arg [] a param-less mock infers, which can't be cast to a 2-tuple.
+    const fetchMock = vi.fn<typeof fetch>(async () =>
       jsonResponse({
         status: "refusal",
         reason: "weight_missing",
@@ -65,10 +68,12 @@ describe("Console — refusal flow (amber)", () => {
       expect(screen.getByTestId("turn1-refusal")).toBeInTheDocument();
     });
 
-    // It POSTed to /api/turn1 with the prefilled note (no typing).
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    // It POSTed to /api/turn1 with the prefilled note (no typing). The mock is
+    // typed with fetch's signature, so calls[0] is a proper [input, init?] tuple.
+    const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/turn1");
-    const sentNote = JSON.parse(init.body as string).note as string;
+    const sentNote = JSON.parse((init as RequestInit).body as string)
+      .note as string;
     expect(sentNote).toBe(DEMO_NOTES.find((d) => d.id === "refusal")?.note);
 
     // The refusal renders amber (the safety Alert), not red.
