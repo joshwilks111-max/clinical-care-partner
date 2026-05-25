@@ -21,8 +21,8 @@ LLM-judge metric, on a different model." We cite the line, then the leash.
 | Deterministic dose tool (LLM never does math) | npj Digital Medicine | Tool-based calc = 5.5–13× fewer incorrect responses vs in-context arithmetic | (headline; the strongest single evidence line for the safety spine) |
 | Abstention-as-safety / investigate-before-abstain (whole thesis) | 2509.24816 (KnowGuard) | The *paradigm* — abstain on insufficient evidence; check knowledge boundaries against **external** medical evidence, not model self-assessment | Their *mechanism* (systematic knowledge-graph exploration over a large medical space) — that is our **deferred** large-corpus path, not the v1 whole-doc build |
 
-The token-budget argument is the *load-bearing* reason for whole-document retrieval (2 × ~5K tokens
-≈ 10K, fits the window with room to spare). The retrieval papers are cited **consistent-with**, not
+The token-budget argument is the *load-bearing* reason for whole-document retrieval (2 guidelines,
+~800 tokens total — measured from `registry/guidelines.ts` — fit the window many times over). The retrieval papers are cited **consistent-with**, not
 as the justification. This distinction matters: if a reviewer pulls the papers and finds a caveat,
 the design still stands because the real reason never depended on them.
 
@@ -48,7 +48,7 @@ the design still stands because the real reason never depended on them.
 - **Location:** Results, p.4.
 - **Caveat:** Cite the **body line (88%)**, NOT the abstract's ">90%" — the abstract rounds up. The
   method is a **regex-search-loop at larger scale**. We cite it **consistent-with** our no-vector-DB
-  choice; our actual reason is the **token budget** (a 2-document, ~10K-token corpus needs no
+  choice; our actual reason is the **token budget** (a 2-document, ~800-token corpus needs no
   retrieval at all).
 
 ### 2605.15184 — PwC (lexical / grep retrieval)

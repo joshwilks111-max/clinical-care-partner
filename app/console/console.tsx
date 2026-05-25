@@ -24,17 +24,13 @@ import { ShieldAlert, OctagonX } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 import { CasePanel } from "./case-panel";
 import { Turn1View } from "./turn1-view";
 import { Turn2View } from "./turn2-view";
 import { PhaseLoader, type Phase } from "./phase-loader";
-import {
-  DEMO_NOTES,
-  type DemoCase,
-  type Turn1Response,
-  type Turn1Success,
-} from "./fixtures";
+import { DEMO_NOTES, type Turn1Response, type Turn1Success } from "./fixtures";
 import type { Turn2Response } from "@/app/api/turn2/route";
 import type { CaseState } from "@/lib/case-state";
 
@@ -42,6 +38,7 @@ type Busy = { kind: "turn1" } | { kind: "turn2"; phase: Phase } | null;
 
 export function Console() {
   const [note, setNote] = useState("");
+  const [draft, setDraft] = useState(""); // the paste textarea (draft-until-Run).
   const [turn1, setTurn1] = useState<Turn1Response | null>(null);
   const [weightConfirmed, setWeightConfirmed] = useState(false);
   const [turn2, setTurn2] = useState<Turn2Response | null>(null);
@@ -49,9 +46,15 @@ export function Console() {
 
   const turn1Ok: Turn1Success | null = turn1?.status === "ok" ? turn1 : null;
 
-  // --- Step 1: a demo button → POST /api/turn1. Resets downstream state. ---
-  async function runTurn1(demo: DemoCase) {
-    setNote(demo.note);
+  // --- Step 1: run turn-1 on a raw note → POST /api/turn1. Resets downstream
+  // state. SINGLE PATH for BOTH the demo buttons and the paste textarea — there
+  // is no second fetch to /api/turn1, so pasted text is wrapped in the same
+  // untrusted-note delimiters (prompts/turn1.ts) as demo notes. The trust
+  // boundary is enforced by having exactly one path to the route. ---
+  async function runTurn1(rawNote: string) {
+    const note = rawNote.trim();
+    if (note.length === 0) return;
+    setNote(note); // left panel shows what was submitted (draft-until-Run).
     setTurn1(null);
     setTurn2(null);
     setWeightConfirmed(false);
@@ -60,7 +63,7 @@ export function Console() {
       const res = await fetch("/api/turn1", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ note: demo.note }),
+        body: JSON.stringify({ note }),
       });
       const data = (await res.json()) as Turn1Response;
       setTurn1(data);
@@ -128,32 +131,87 @@ export function Console() {
         </div>
       </header>
 
-      {/* 1-click demo buttons — the reviewer never types (X5). */}
+      {/* 1-click demo buttons — the deterministic on-camera path (X5). Grouped
+          Notes vs Transcripts so the weight-present/weight-absent transcript pair
+          reads as a deliberate parsing-vs-refusal contrast, not a button wall. */}
       <section data-testid="demo-buttons" className="mb-5">
         <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
           Demo cases — one click, no typing
         </p>
-        <div className="flex flex-wrap gap-2">
-          {DEMO_NOTES.map((demo) => (
-            <div key={demo.id} className="flex flex-col">
-              <Button
-                variant="outline"
-                data-demo-id={demo.id}
-                disabled={busy !== null}
-                onClick={() => runTurn1(demo)}
-                // min-h 44px: the demo buttons are the primary (only) tap target —
-                // a reviewer on a tablet/phone needs a real touch target.
-                className="h-auto min-h-[44px] py-2"
-              >
-                {demo.label}
-              </Button>
-              {/* Caption carries real clinical info (the case + expected dose), so
-                  it must be legible: 12px (not 10.5) + AA-contrast text colour. */}
-              <span className="mt-1 max-w-[200px] text-xs leading-tight text-foreground/70">
-                {demo.caption}
-              </span>
+        <div className="space-y-3">
+          {(["note", "transcript"] as const).map((group) => (
+            <div key={group}>
+              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+                {group === "note" ? "Notes" : "Transcripts"}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {DEMO_NOTES.filter((d) => d.group === group).map((demo) => (
+                  <div key={demo.id} className="flex flex-col">
+                    <Button
+                      variant="outline"
+                      data-demo-id={demo.id}
+                      disabled={busy !== null}
+                      onClick={() => runTurn1(demo.note)}
+                      // min-h 44px: real touch target for a reviewer on a tablet.
+                      className="h-auto min-h-[44px] py-2"
+                    >
+                      {demo.label}
+                    </Button>
+                    {/* Caption carries real clinical info (case + expected dose),
+                        so it must be legible: 12px + AA-contrast colour. */}
+                    <span className="mt-1 max-w-[200px] text-xs leading-tight text-foreground/70">
+                      {demo.caption}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Paste-your-own — proves "accepts unstructured clinical text (note
+          AND/OR transcript)" WITHOUT removing the no-typing demo path. Routed
+          through the SAME runTurn1(note) → /api/turn1, so pasted text gets the
+          same untrusted-note delimiters (no bypass). Draft-until-Run: typing
+          here does not touch the left-panel case until Run. */}
+      <section data-testid="paste-own" className="mb-5 border-t pt-4">
+        <label
+          htmlFor="paste-note"
+          className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+        >
+          Or paste your own note or transcript
+        </label>
+        <Textarea
+          id="paste-note"
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          // Cmd/Ctrl+Enter runs it — reviewers expect a keyboard submit.
+          onKeyDown={(e) => {
+            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+              e.preventDefault();
+              if (draft.trim() && busy === null) runTurn1(draft);
+            }
+          }}
+          disabled={busy !== null}
+          rows={4}
+          aria-describedby="paste-help"
+          placeholder="Paste a free-text clinical note or a doctor-patient transcript, then Run. It flows through the same untrusted-note boundary as the demos."
+          className="resize-y text-sm"
+        />
+        <div className="mt-2 flex items-center gap-3">
+          <Button
+            data-testid="paste-run"
+            disabled={busy !== null || draft.trim().length === 0}
+            onClick={() => runTurn1(draft)}
+            className="h-auto min-h-[44px] py-2"
+          >
+            Run
+          </Button>
+          <span id="paste-help" className="text-xs text-muted-foreground">
+            Same engine as the demos · ⌘/Ctrl+Enter to run · weightless input
+            triggers the refusal gate.
+          </span>
         </div>
       </section>
 

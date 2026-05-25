@@ -97,9 +97,24 @@ export function buildTurn1SystemPrompt(): string {
 }
 
 /**
+ * Strip any forged boundary markers from an untrusted note BEFORE it is wrapped.
+ * Defence-in-depth: a pasted note that itself contains NOTE_OPEN/NOTE_CLOSE could
+ * otherwise blur the data region (text after a forged close marker could read as
+ * outside the untrusted boundary). We neutralise the markers so the wrap is the
+ * ONLY occurrence — the model always sees exactly one open and one close. The
+ * blast radius was already bounded (turn 1 emits a structured differential, never
+ * a dose), but the free-text paste input makes this surface user-reachable, so we
+ * close it at construction time rather than rely on the model to be robust.
+ */
+export function sanitizeUntrustedNote(note: string): string {
+  return note.split(NOTE_OPEN).join("").split(NOTE_CLOSE).join("");
+}
+
+/**
  * The USER message: the untrusted note wrapped in explicit data delimiters.
  * Keeping the note in the user turn (not the system prompt) preserves the trust
  * layering — system rules are separate from, and authoritative over, note data.
+ * The note is sanitised first so it cannot forge the boundary markers.
  */
 export function buildTurn1UserPrompt(note: string): string {
   return [
@@ -108,7 +123,7 @@ export function buildTurn1UserPrompt(note: string): string {
     "per the rules in your system instructions, then return the structured output.",
     "",
     NOTE_OPEN,
-    note,
+    sanitizeUntrustedNote(note),
     NOTE_CLOSE,
   ].join("\n");
 }

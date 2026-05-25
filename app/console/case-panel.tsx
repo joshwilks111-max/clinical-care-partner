@@ -51,8 +51,9 @@ export function CasePanel({
         The case
       </div>
       <div className="space-y-3 p-3.5">
-        {/* The note (display). */}
-        <div className="rounded-lg border bg-muted/30 px-3 py-2.5 text-[13px] text-foreground/80">
+        {/* The note (display). whitespace-pre-line keeps transcript line breaks
+            (the dialogue fixtures join with \n) instead of collapsing them. */}
+        <div className="whitespace-pre-line rounded-lg border bg-muted/30 px-3 py-2.5 text-[13px] text-foreground/80">
           {note.trim().length > 0 ? note : "No note loaded yet."}
         </div>
 

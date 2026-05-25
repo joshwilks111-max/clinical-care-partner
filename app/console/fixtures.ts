@@ -53,7 +53,15 @@ export type Turn1Response = Turn1Success | Turn1Refusal | Turn1Error;
 
 export type DemoCase = {
   /** Stable key for buttons/tests. */
-  id: "refusal" | "croup" | "cap" | "anaphylaxis";
+  id:
+    | "refusal"
+    | "croup"
+    | "cap"
+    | "anaphylaxis"
+    | "transcript-croup"
+    | "transcript-noweight";
+  /** Which demo group the button sits in (Notes vs Transcripts). */
+  group: "note" | "transcript";
   /** Button label the reviewer clicks. */
   label: string;
   /** One-line "what this demonstrates" caption under the button. */
@@ -63,8 +71,10 @@ export type DemoCase = {
 };
 
 export const DEMO_NOTES: DemoCase[] = [
+  // --- NOTES (structured clinical notes) ---
   {
     id: "refusal",
+    group: "note",
     label: "Refusal (no weight)",
     caption: "Weightless note → pre-LLM refusal, zero model calls.",
     // No kg weight present → the pre-LLM gate refuses with no model call.
@@ -72,22 +82,63 @@ export const DEMO_NOTES: DemoCase[] = [
   },
   {
     id: "croup",
+    group: "note",
     label: "Croup (Jack)",
     caption: "Jack 14.2 kg moderate croup → 2.13 mg dexamethasone.",
     note: "Jack T, 3yo, 14.2 kg. Barky cough, stridor at rest, no cyanosis, not lethargic. ?croup.",
   },
   {
     id: "cap",
+    group: "note",
     label: "Cap (25kg severe)",
     caption: "25 kg severe croup → 15 mg raw → CAPPED to 12 mg.",
     note: "5yo, 25 kg. Severe croup: persistent stridor at rest, marked distress, lethargic, cyanosis.",
   },
   {
     id: "anaphylaxis",
+    group: "note",
     label: "Anaphylaxis",
     caption:
       "Adrenaline 0.01 mg/kg IM → 0.14 mL. Same harness, different drug.",
     note: "4yo, 14.2 kg. Acute urticaria, lip swelling and wheeze after peanut. Anaphylaxis.",
+  },
+
+  // --- TRANSCRIPTS (free-form dialogue — proves "note AND/OR transcript" intake) ---
+  {
+    id: "transcript-croup",
+    group: "transcript",
+    label: "Transcript (croup)",
+    caption: "Dialogue with weight → full differential → dose.",
+    // Weight-PRESENT and phrased "14.2 kg" (NOT "kilos") — the pre-LLM gate's
+    // regex (route.ts KG_WEIGHT_PRESENT) matches kg|kgs|kilograms? but NOT
+    // "kilos", so "kilos" here would WRONGLY refuse. hasKgWeight(note) MUST be
+    // true (locked by a unit test in fixtures-weight-gate.test.ts).
+    note: [
+      "Doctor: Hi, what's brought you in today?",
+      "Parent: It's Jack, he's 3. He's had this awful barky cough since last night and a wheezy noise when he breathes in.",
+      "Doctor: Is the noisy breathing there even when he's resting quietly?",
+      "Parent: Yeah, even just sitting on my lap. He's not blue around the lips though, and he's still alert and grizzly, not floppy.",
+      "Doctor: Good. And how much does he weigh?",
+      "Parent: He was 14.2 kg at his check-up last week.",
+      "Doctor: Okay. This looks like croup — barky cough with stridor at rest.",
+    ].join("\n"),
+  },
+  {
+    id: "transcript-noweight",
+    group: "transcript",
+    label: "Transcript (no weight)",
+    caption: "Dialogue, NO weight stated → live refusal gate.",
+    // Weight-ABSENT — must contain NO "\d+\s*kg" substring anywhere, or the gate
+    // would pass and call the model. Pasting this fires the pre-LLM refusal,
+    // demonstrating the safety thesis on a messy real-world transcript.
+    note: [
+      "Doctor: What's been going on?",
+      "Parent: My little girl's got a barking cough and this rasping sound breathing in. Started overnight.",
+      "Doctor: Is the noisy breathing there at rest, when she's calm?",
+      "Parent: Yes, even when she's just lying still. No blue lips, and she's still responsive.",
+      "Doctor: Sounds like croup. Do you know her current weight?",
+      "Parent: Honestly no — we haven't been to a check-up in ages, I couldn't tell you.",
+    ].join("\n"),
   },
 ];
 
