@@ -236,6 +236,13 @@ export function applyAnswer(
       ...target.negative_evidence,
       ...target.positive_evidence.filter((f) => toMove.has(f)),
     ]);
+    // SAFETY (do NOT simplify away the `toMove.size > 0` guard): only demote
+    // when a discriminator was ACTUALLY confirmed absent. Removing the guard —
+    // demoting unconditionally — would let an all-unknown answer (toMove empty)
+    // demote the band to "possible" with no evidence; the must-not-miss would
+    // then look resolved and decideCollapse could reach "plan", DOSING without
+    // ruling out the danger (the exact false-negative this beat exists to
+    // prevent). lib/collapse.test.ts pins both sides of this guard.
     if (target.likelihood === "must-not-miss" && toMove.size > 0) {
       likelihood = "possible";
     }
