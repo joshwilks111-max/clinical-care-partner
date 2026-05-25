@@ -168,14 +168,13 @@ export function Console() {
             </div>
           ))}
         </div>
-
-        {/* Paste-your-own — proves "accepts unstructured clinical text (note
-            AND/OR transcript)" WITHOUT removing the no-typing demo path. Routed
-            through the SAME runTurn1(note) → /api/turn1, so pasted text gets the
-            same untrusted-note delimiters (no bypass). Draft-until-Run: typing
-            here does not touch the left-panel case until Run. */}
       </section>
 
+      {/* Paste-your-own — proves "accepts unstructured clinical text (note
+          AND/OR transcript)" WITHOUT removing the no-typing demo path. Routed
+          through the SAME runTurn1(note) → /api/turn1, so pasted text gets the
+          same untrusted-note delimiters (no bypass). Draft-until-Run: typing
+          here does not touch the left-panel case until Run. */}
       <section data-testid="paste-own" className="mb-5 border-t pt-4">
         <label
           htmlFor="paste-note"
