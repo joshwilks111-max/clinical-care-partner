@@ -106,7 +106,7 @@ export function sanitizeDiscriminator(s: string): string {
   out = out.replace(/www\.\S+/gi, " ");
 
   // 4. Strip markdown control characters.
-  out = out.replace(/[`[\]()#>*_]/g, " ");
+  out = out.replace(/[`[\]()<>#*_]/g, " ");
 
   // 5. Collapse whitespace and trim.
   out = out.replace(/\s+/g, " ").trim();
@@ -138,9 +138,15 @@ export function sanitizeDiscriminators(list: string[]): string[] {
 /**
  * A small structured summary of already-confirmed case facts (turn-1 output
  * confirmed by the clinician). Passed to the question prompt so the model can
- * phrase the question appropriately (e.g. reference the patient age). These
- * are STRUCTURED and TRUSTED — they come from the validated CaseState, not
- * from the raw note text.
+ * phrase the question appropriately (e.g. reference the patient age).
+ *
+ * Structural provenance: these values are LLM-extracted strings that came from
+ * the untrusted clinical note (turn-1 read the note to populate them). They
+ * are structurally validated by the CaseState schema, but their CONTENT is
+ * model-authored from an untrusted source. Accordingly, string fields
+ * (`age`, `severity`) are sanitized via `sanitizeDiscriminator` before being
+ * interpolated into a prompt — the same basis as the discriminators above.
+ * `weight_kg` is a `number | null` and needs no sanitization.
  */
 export type ConfirmedFactsSummary = {
   age: string | null;
@@ -221,9 +227,9 @@ export function buildQuestionUserPrompt(
   const safeDiscriminators = sanitizeDiscriminators(discriminators);
 
   const factsLines = [
-    `  - age: ${confirmedFacts.age ?? "(not stated)"}`,
+    `  - age: ${sanitizeDiscriminator(confirmedFacts.age ?? "") || "(not stated)"}`,
     `  - weight_kg: ${confirmedFacts.weight_kg ?? "(not documented)"}`,
-    `  - severity: ${confirmedFacts.severity ?? "(not stated)"}`,
+    `  - severity: ${sanitizeDiscriminator(confirmedFacts.severity ?? "") || "(not stated)"}`,
   ].join("\n");
 
   return [
