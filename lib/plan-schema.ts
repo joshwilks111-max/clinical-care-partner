@@ -21,11 +21,12 @@
 //      * RefusalDecision (lib/refusal-gate)      — reasons: weight_missing |
 //        no_matching_guideline. Fires BEFORE the model / when no guideline exists.
 //    They live at DIFFERENT layers (pre-LLM context-gate vs in-tool math-gate),
-//    so they SHOULD stay separate at their source. But the UI (Task 8) must
-//    render ONE amber "deliberate abstention" state regardless of which layer
-//    abstained. This module defines that single shape — `Abstention` — plus the
-//    two small adapters that map each source refusal onto it. Task 8 consumes
-//    exactly ONE shape; it can't mis-handle a refusal it didn't know about.
+//    so they SHOULD stay separate at their source. But the console UI
+//    (app/console) must render ONE amber "deliberate abstention" state regardless
+//    of which layer abstained. This module defines that single shape —
+//    `Abstention` — plus the two small adapters that map each source refusal onto
+//    it. The console consumes exactly ONE shape; it can't mis-handle a refusal it
+//    didn't know about.
 
 import { z } from "zod";
 import type { DoseRefusal } from "@/tools/calculate_dose";

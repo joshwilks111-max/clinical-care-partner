@@ -9,7 +9,7 @@
 // EVERY required slot must be present AND value != null AND value non-empty.
 // "Escalation: not specified" / "" / whitespace must FAIL.
 //
-// ── RequiredFields TYPE DECISION (the deferred call from Task 2) ──────────────
+// ── RequiredFields TYPE DECISION (the deferred call from the registry) ────────
 // The registry types RequiredFields as { fields: string[] }. I deliberately do
 // NOT tighten the slot names into a closed union, and I leave the registry
 // UNTOUCHED. Rationale:

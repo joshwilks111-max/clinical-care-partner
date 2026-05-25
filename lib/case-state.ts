@@ -11,9 +11,11 @@
 //   object, so each turn is independently reproducible and the clinician's
 //   confirmation is the sole state that moves judgment → execution.
 //
-// note_hash is a SHA-256 of the raw note: it pins WHICH note these outputs came
-// from (so turn 2 can detect a swapped note) WITHOUT carrying the untrusted text
-// itself across the boundary. The note never re-enters the model after turn 1.
+// note_hash is a SHA-256 of the raw note: it pins provenance for audit and future
+// verification WITHOUT carrying the untrusted text itself across the boundary. The
+// note never re-enters the model after turn 1. Active swapped-note detection is
+// deferred (it would HMAC-sign the CaseState server-side and verify in turn 2);
+// turn 2 does not currently compare the hash, it only string-validates its shape.
 
 import { createHash } from "node:crypto";
 import type { ExtractedFacts, Differential } from "@/lib/schemas";

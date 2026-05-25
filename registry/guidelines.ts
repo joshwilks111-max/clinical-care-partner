@@ -2,7 +2,7 @@
 //
 // The registry is the SINGLE SOURCE OF TRUTH for every clinical value.
 // INVARIANT: the LLM picks a dose rule BY ID and never sets the numbers.
-// The deterministic dose tool (later task) looks every value up here — drug,
+// The deterministic dose tool (tools/calculate_dose.ts) looks every value up here — drug,
 // mg_per_kg, max_mg, route, concentration_mg_per_ml, rounding, min_mg. This is
 // the trust boundary made literal: an injected note can change which rule is
 // requested but can never change what a rule SAYS (see DESIGN.md "Trust boundary").
@@ -284,7 +284,7 @@ export function getDoseRule(
 }
 
 /**
- * Routing data only (NO logic). The router (lib/router.ts, a later task)
+ * Routing data only (NO logic). The router (lib/router.ts)
  * consumes this to map a confirmed condition to its guideline_id.
  * One guideline per condition. Setting is "hospital ED" per DESIGN.md's table;
  * profession is "(any)".

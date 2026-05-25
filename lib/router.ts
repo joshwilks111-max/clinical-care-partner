@@ -38,8 +38,12 @@ export function route(
  * confirmed condition. Unknown guideline_id or unknown condition → false
  * (we cannot confirm a match, so we fail closed).
  *
- * Task 9 asserts this; the auto-abstain BEHAVIOUR on mismatch is the deferred
- * guard — this function is the audit primitive it would consume.
+ * The auto-abstain BEHAVIOUR on mismatch is now wired into turn 2:
+ * app/api/turn2/route.ts calls this as a fail-closed abstention gate and returns
+ * a no-guideline abstention on a false result. It is non-tautological because
+ * turn 2 routes on the clinician's selected_guideline_id (not a self-derived id),
+ * so the audit can genuinely fail when the routed guideline does not match the
+ * confirmed condition.
  */
 export function auditRoutedGuideline(
   confirmedCondition: string,

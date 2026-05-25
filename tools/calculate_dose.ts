@@ -64,9 +64,10 @@ export function isRefusal(r: DoseResult | DoseRefusal): r is DoseRefusal {
 }
 
 // ---------------------------------------------------------------------------
-// GUARD-2 helper — string-unit rejection (used by upstream extraction).
-// calculate_dose receives a numeric weight_kg; this exported helper lets the
-// extraction layer reject "lb/lbs/pounds" BEFORE a number ever reaches the tool.
+// GUARD-2 helper — string-unit rejection. NOT yet wired into the extraction
+// path (turn 1 currently uses an inline kg-presence regex, KG_WEIGHT_PRESENT,
+// in the turn1 route). Kept + unit-tested for the future extraction layer that
+// would reject "lb/lbs/pounds" BEFORE a number ever reaches the tool.
 // Kept numeric + testable, not "looks like pounds".
 // ---------------------------------------------------------------------------
 
