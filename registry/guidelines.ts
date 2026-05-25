@@ -266,6 +266,18 @@ export function getGuideline(id: string): Guideline | null {
   return GUIDELINES[id] ?? null;
 }
 
+/** Deterministic rule retrieval; null if the guideline or rule id is unknown. */
+export function getDoseRule(
+  guidelineId: string,
+  doseRuleId: string,
+): DoseRule | null {
+  return (
+    getGuideline(guidelineId)?.dose_rules.find(
+      (r) => r.dose_rule_id === doseRuleId,
+    ) ?? null
+  );
+}
+
 /**
  * Routing data only (NO logic). The router (lib/router.ts, a later task)
  * consumes this to map a confirmed condition to its guideline_id.

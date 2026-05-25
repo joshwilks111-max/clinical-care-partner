@@ -11,10 +11,16 @@ import { describe, it, expect } from "vitest";
 import {
   GUIDELINES,
   getGuideline,
+  getDoseRule,
   ROUTING_TABLE,
-  type Guideline,
   type DoseRule,
 } from "./guidelines";
+
+/** Assert-then-narrow: surface the registry's null contract instead of casting past it. */
+function getOrThrow<T>(value: T | null, label: string): T {
+  if (value === null) throw new Error(`fixture missing: ${label}`);
+  return value;
+}
 
 const REQUIRED_DOSE_RULE_KEYS: Array<keyof DoseRule> = [
   "dose_rule_id",
@@ -39,13 +45,13 @@ describe("guideline registry", () => {
   it("getGuideline returns the croup guideline", () => {
     const g = getGuideline("starship-croup-2020");
     expect(g).not.toBeNull();
-    expect((g as Guideline).condition).toBe("croup");
+    expect(getOrThrow(g, "croup").condition).toBe("croup");
   });
 
   it("getGuideline returns the anaphylaxis guideline", () => {
     const g = getGuideline("ascia-anaphylaxis-2024");
     expect(g).not.toBeNull();
-    expect((g as Guideline).condition).toBe("anaphylaxis");
+    expect(getOrThrow(g, "anaphylaxis").condition).toBe("anaphylaxis");
   });
 
   it("getGuideline returns null for an unknown id", () => {
@@ -74,10 +80,35 @@ describe("dose rules — required fields populated and human-verified", () => {
       }
     }
   });
+
+  it("has no duplicate dose_rule_ids across guidelines", () => {
+    const ids = Object.values(GUIDELINES).flatMap((g) =>
+      g.dose_rules.map((r) => r.dose_rule_id),
+    );
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe("getDoseRule accessor", () => {
+  it("returns the rule for a known guideline + rule id", () => {
+    const rule = getOrThrow(
+      getDoseRule("starship-croup-2020", "croup-dex-moderate"),
+      "croup-dex-moderate",
+    );
+    expect(rule.dose_rule_id).toBe("croup-dex-moderate");
+  });
+
+  it("returns null for an unknown rule id in a known guideline", () => {
+    expect(getDoseRule("starship-croup-2020", "nonexistent")).toBeNull();
+  });
+
+  it("returns null for an unknown guideline id", () => {
+    expect(getDoseRule("nonexistent", "croup-dex-moderate")).toBeNull();
+  });
 });
 
 describe("croup guideline — dosing constants", () => {
-  const croup = getGuideline("starship-croup-2020") as Guideline;
+  const croup = getOrThrow(getGuideline("starship-croup-2020"), "croup");
 
   it("has both a moderate and a severe dexamethasone rule", () => {
     const ids = croup.dose_rules.map((r) => r.dose_rule_id).sort();
@@ -85,9 +116,10 @@ describe("croup guideline — dosing constants", () => {
   });
 
   it("moderate rule: dexamethasone 0.15 mg/kg, max 12 mg, oral, no concentration", () => {
-    const moderate = croup.dose_rules.find(
-      (r) => r.dose_rule_id === "croup-dex-moderate",
-    ) as DoseRule;
+    const moderate = getOrThrow(
+      getDoseRule("starship-croup-2020", "croup-dex-moderate"),
+      "croup-dex-moderate",
+    );
     expect(moderate.drug).toBe("dexamethasone");
     expect(moderate.mg_per_kg).toBe(0.15);
     expect(moderate.max_mg).toBe(12);
@@ -101,9 +133,10 @@ describe("croup guideline — dosing constants", () => {
   });
 
   it("severe rule: dexamethasone 0.6 mg/kg, max 12 mg, oral", () => {
-    const severe = croup.dose_rules.find(
-      (r) => r.dose_rule_id === "croup-dex-severe",
-    ) as DoseRule;
+    const severe = getOrThrow(
+      getDoseRule("starship-croup-2020", "croup-dex-severe"),
+      "croup-dex-severe",
+    );
     expect(severe.drug).toBe("dexamethasone");
     expect(severe.mg_per_kg).toBe(0.6);
     expect(severe.max_mg).toBe(12);
@@ -117,7 +150,7 @@ describe("croup guideline — dosing constants", () => {
 });
 
 describe("anaphylaxis guideline — dosing constants", () => {
-  const ana = getGuideline("ascia-anaphylaxis-2024") as Guideline;
+  const ana = getOrThrow(getGuideline("ascia-anaphylaxis-2024"), "anaphylaxis");
 
   it("has exactly one adrenaline IM rule", () => {
     expect(ana.dose_rules.length).toBe(1);
@@ -125,7 +158,10 @@ describe("anaphylaxis guideline — dosing constants", () => {
   });
 
   it("adrenaline rule: 0.01 mg/kg, max 0.5 mg, IM, concentration 1.0 mg/mL", () => {
-    const rule = ana.dose_rules[0];
+    const rule = getOrThrow(
+      getDoseRule("ascia-anaphylaxis-2024", "anaphylaxis-adrenaline-im"),
+      "anaphylaxis-adrenaline-im",
+    );
     expect(rule.drug).toBe("adrenaline");
     expect(rule.mg_per_kg).toBe(0.01);
     expect(rule.max_mg).toBe(0.5);
