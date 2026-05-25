@@ -109,4 +109,21 @@ describe("POST /api/turn1 — weightless note refuses with ZERO model calls", ()
     expect(body.status).toBe("refusal");
     expect(spy.calls.length).toBe(0);
   });
+
+  it("FIX5 (ADV-6): an oversized note → 413 'Request too large.' with ZERO network", async () => {
+    const spy = installFetchSpy();
+    restoreFetch = () => {
+      globalThis.fetch = spy.original;
+    };
+
+    // A note over the 16 KB cap (and it carries a kg weight, so the size guard —
+    // not the pre-LLM weight gate — is what must fire). Rejected before any model.
+    const huge = "patient 14.2 kg. " + "x".repeat(20 * 1024);
+    const res = await POST(postNote(huge));
+    expect(res.status).toBe(413);
+    const body = (await res.json()) as { status?: string; message?: string };
+    expect(body.status).toBe("error");
+    expect(body.message).toBe("Request too large.");
+    expect(spy.calls.length).toBe(0);
+  });
 });

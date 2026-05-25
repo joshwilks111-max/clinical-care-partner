@@ -71,21 +71,36 @@ function DoseTrace({ trace }: { trace: string }) {
 
 /** One recommendation as a labeled quote block with a clickable source_url (D7). */
 function RecommendationBlock({ rec }: { rec: PlanRecommendationType }) {
+  // FIX 3 (ADV-4) — only render the verbatim blockquote when the server VERIFIED
+  // the quote against the guideline text (an unverifiable quote is blanked to ""
+  // upstream). Never show empty quote marks as if a citation existed.
+  const hasVerifiedQuote = rec.quote.length > 0;
+  // FIX 2 (SEC-1, XSS) — defensive scheme guard. source_url is registry-stamped
+  // server-side, but render the clickable link ONLY for an https:// URL so a
+  // javascript:/data: value could never reach an anchor href.
+  const safeSourceUrl = rec.source_url.startsWith("https://")
+    ? rec.source_url
+    : null;
   return (
     <div className="space-y-1.5">
       <p className="text-[13px]">{rec.text}</p>
-      <blockquote className="border-l-2 border-primary/50 pl-3 text-[12px] italic text-muted-foreground">
-        “{rec.quote}”
-        <div className="mt-1 text-[11px] not-italic">
-          <span className="font-medium">{rec.source_section}</span>
-          <span className="text-muted-foreground"> · {rec.source_version}</span>
-        </div>
-      </blockquote>
+      {hasVerifiedQuote && (
+        <blockquote className="border-l-2 border-primary/50 pl-3 text-[12px] italic text-muted-foreground">
+          “{rec.quote}”
+          <div className="mt-1 text-[11px] not-italic">
+            <span className="font-medium">{rec.source_section}</span>
+            <span className="text-muted-foreground">
+              {" "}
+              · {rec.source_version}
+            </span>
+          </div>
+        </blockquote>
+      )}
       {/* source_url is the resolved registry citation URL — rendered verbatim.
           The Source link is clickable and ALWAYS visible (D7: every claim's
           source is one glance away, not hidden behind a collapse toggle).
-          Uses the AI Elements `Source` leaf. */}
-      <Source href={rec.source_url} title={rec.source_url} />
+          Guarded to https:// only (FIX 2). Uses the AI Elements `Source` leaf. */}
+      {safeSourceUrl && <Source href={safeSourceUrl} title={safeSourceUrl} />}
     </div>
   );
 }

@@ -39,6 +39,11 @@ export const maxDuration = 300;
 const MODEL = "claude-opus-4-7";
 const MAX_OUTPUT_TOKENS = 1500; // cost discipline — a differential is small.
 
+// FIX 5 (ADV-6) — cap the note length. A clinical note is short; 16 KB (~16k
+// chars) is far more than any real note while rejecting a huge payload BEFORE it
+// reaches the model. This is a spend/DoS guard on a public, key-spending route.
+const MAX_NOTE_CHARS = 16 * 1024;
+
 // ---------------------------------------------------------------------------
 // STEP-1 helper: deterministic PRE-LLM weight-presence pre-check.
 //
@@ -101,6 +106,14 @@ export async function POST(req: Request): Promise<Response> {
         message: "Request must include a non-empty `note` string.",
       };
       return NextResponse.json(err, { status: 400 });
+    }
+    // FIX 5 (ADV-6) — reject an oversized note BEFORE any model call.
+    if (body.note.length > MAX_NOTE_CHARS) {
+      const err: TechnicalErrorResponse = {
+        status: "error",
+        message: "Request too large.",
+      };
+      return NextResponse.json(err, { status: 413 });
     }
     note = body.note;
   } catch {
@@ -167,11 +180,13 @@ export async function POST(req: Request): Promise<Response> {
     });
   } catch (e) {
     // Model unreachable, SDK error, or Zod parse failure — all RED technical.
+    // FIX 4 (SEC-2) — log the full error SERVER-side; return a GENERIC client
+    // message (never echo e.message — it can carry provider internals / secrets).
+    console.error("[turn1] structured differential failed:", e);
     const err: TechnicalErrorResponse = {
       status: "error",
       message:
-        "Turn 1 could not produce a structured differential (model or schema error). " +
-        (e instanceof Error ? e.message : String(e)),
+        "A technical error occurred during turn 1 differential generation.",
     };
     return NextResponse.json(err, { status: 502 });
   }

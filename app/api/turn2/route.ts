@@ -38,7 +38,7 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateText, Output, stepCountIs } from "ai";
 
 import { route, auditRoutedGuideline } from "@/lib/router";
-import { getGuideline } from "@/registry/guidelines";
+import { getGuideline, getDoseRule } from "@/registry/guidelines";
 import {
   calculate_dose,
   isRefusal,
@@ -74,6 +74,13 @@ const MODEL = "claude-opus-4-7";
 // Cost discipline: classification is tiny; synthesis a little larger. Bounded.
 const SEVERITY_MAX_OUTPUT_TOKENS = 600;
 const PLAN_MAX_OUTPUT_TOKENS = 1800;
+
+// FIX 5 (ADV-6) — body-size cap. A CaseState is small structured data (facts +
+// a hashed note + the differential), so 64 KB is generous headroom while still
+// rejecting an oversized payload BEFORE we parse + drive two model calls off it.
+// This is a spend/DoS guard on a public, key-spending route. Larger than turn 1's
+// 16 KB note cap because CaseState also carries the differential JSON.
+const MAX_CASESTATE_BODY_BYTES = 64 * 1024;
 
 // ---------------------------------------------------------------------------
 // Response shapes (discriminated by `status`).
@@ -146,6 +153,23 @@ function abstentionResponse(a: Abstention): AbstentionResponse {
   };
 }
 
+/**
+ * FIX 3 (ADV-4) — normalise a string for quote-verification substring matching:
+ * lowercase + collapse all whitespace runs (incl. newlines) to single spaces +
+ * strip surrounding quote marks/punctuation + trim. The guideline text is
+ * multi-line; the model's "verbatim" quote may reflow whitespace or add/drop an
+ * edge period or wrapping quotes. We tolerate FORMATTING/edge-punctuation while
+ * still proving the quote's WORD SEQUENCE came from the guideline — a
+ * hallucinated quote (different words) still fails the substring check.
+ */
+function normalizeForQuoteMatch(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/^[\s"'“”.,;:–—-]+|[\s"'“”.,;:–—-]+$/g, "")
+    .trim();
+}
+
 /** Narrow + validate the posted CaseState enough to drive turn 2 safely. */
 function isCaseStateLike(v: unknown): v is CaseState {
   if (typeof v !== "object" || v === null) return false;
@@ -172,7 +196,20 @@ export async function POST(req: Request): Promise<Response> {
   // --- Parse the CaseState from the request (bad body → red technical error). ---
   let caseState: CaseState;
   try {
-    const body = (await req.json()) as { caseState?: unknown };
+    // FIX 5 (ADV-6) — cap the request body BEFORE parsing it. Read the raw text
+    // (bounded by length) so a huge payload can't be parsed into memory or fed to
+    // the two model calls. content-length is advisory (a client can lie / omit
+    // it), so we also re-check the actual decoded length as the authoritative
+    // guard. Oversized → 413 technical error, ZERO model calls.
+    const rawBody = await req.text();
+    if (rawBody.length > MAX_CASESTATE_BODY_BYTES) {
+      const err: TechnicalErrorResponse = {
+        status: "error",
+        message: "Request too large.",
+      };
+      return NextResponse.json(err, { status: 413 });
+    }
+    const body = JSON.parse(rawBody) as { caseState?: unknown };
     if (!isCaseStateLike(body.caseState)) {
       const err: TechnicalErrorResponse = {
         status: "error",
@@ -192,31 +229,52 @@ export async function POST(req: Request): Promise<Response> {
   const facts = caseState.extracted_facts;
 
   // ===================================================================
-  // EXECUTION — STEP 2: DETERMINISTIC ROUTER. (condition, profession, setting)
-  // → guideline_id. The clinician confirmed the condition in turn 1; this table
-  // DISPATCHES it (it does not diagnose). Profession/setting default per the
-  // schema's documented defaults. Log the routed id for every case (audit hook).
+  // EXECUTION — STEP 2: SELECT the guideline the clinician CLICKED.
+  //
+  // FIX 1 (P0) — selected_guideline_id is the SOURCE OF TRUTH. The clinician's
+  // click carries the exact guideline they chose to apply; turn 2 honours THAT,
+  // it does NOT re-derive a guideline from the confirmed condition (a note with
+  // two candidate conditions could otherwise route "Apply Croup" to anaphylaxis
+  // and dose the wrong drug). The deterministic router remains as a defensive
+  // fallback for a hand-crafted POST that omits the id.
+  //
+  // The audit then becomes NON-TAUTOLOGICAL: we check the CLICKED guideline's
+  // registered condition against the confirmed condition. A mismatch (the picked
+  // guideline is for a different condition than the one confirmed) ABSTAINS —
+  // fail closed rather than apply a guideline for the wrong condition. Because
+  // routedId is no longer derived from `condition`, this check can actually fail.
   // ===================================================================
   const condition = caseState.selected_condition ?? "";
   const profession = facts.profession ?? "ED clinician";
   const setting = facts.setting ?? "hospital ED";
 
-  const routedId = route(condition, profession, setting);
-  // Audit log: the routed guideline id for every case (DESIGN.md audit hook).
+  let routedId: string | null;
+  if (caseState.selected_guideline_id) {
+    // Primary path: use the clinician's CLICKED guideline as the source of truth.
+    routedId = caseState.selected_guideline_id;
+  } else {
+    // Defensive fallback (the UI always sets selected_guideline_id; a raw POST
+    // might not): route deterministically from the confirmed condition.
+    routedId = route(condition, profession, setting);
+  }
+
+  // Audit log: the selected/routed guideline id for every case (DESIGN.md hook).
   console.log(
-    `[turn2] routed condition="${condition}" → guideline_id=${routedId ?? "(none)"}`,
+    `[turn2] condition="${condition}" selected_guideline_id=${caseState.selected_guideline_id ?? "(none)"} → guideline_id=${routedId ?? "(none)"}`,
   );
 
-  // No row matched → abstain "no local guideline" (distinct copy). Unified shape.
+  // No guideline determined → abstain "no local guideline" (distinct copy).
   if (routedId === null) {
     return NextResponse.json(
       abstentionResponse(fromRefusalDecision(noGuidelineAbstention())),
     );
   }
 
-  // Wrong-guideline AUDIT: the routed id must match the confirmed condition.
-  // (The auto-abstain BEHAVIOUR is the deferred guard; here we DO abstain on a
-  // mismatch — fail closed rather than apply a guideline for the wrong condition.)
+  // Wrong-guideline AUDIT (now non-tautological): the CLICKED guideline's
+  // registered condition must equal the clinician-confirmed condition. This
+  // CATCHES the wrong-guideline case (e.g. condition "croup" but the clicked id
+  // is the anaphylaxis guideline) and abstains rather than silently dosing the
+  // wrong drug.
   if (!auditRoutedGuideline(condition, routedId)) {
     return NextResponse.json(
       abstentionResponse(fromRefusalDecision(noGuidelineAbstention())),
@@ -267,11 +325,14 @@ export async function POST(req: Request): Promise<Response> {
       return SeverityClassification.parse(result.experimental_output);
     });
   } catch (e) {
+    // FIX 4 (SEC-2) — log the full error SERVER-side; return a GENERIC client
+    // message. The raw e.message can carry provider internals / a leaked key
+    // fragment / a stack trace — never echo it to the client.
+    console.error("[turn2] severity classification failed:", e);
     const err: TechnicalErrorResponse = {
       status: "error",
       message:
-        "Turn 2 severity classification failed (model or schema error). " +
-        (e instanceof Error ? e.message : String(e)),
+        "A technical error occurred during turn 2 severity classification.",
     };
     return NextResponse.json(err, { status: 502 });
   }
@@ -348,14 +409,54 @@ export async function POST(req: Request): Promise<Response> {
       return PlanOutput.parse(result.experimental_output);
     });
   } catch (e) {
+    // FIX 4 (SEC-2) — log the full error SERVER-side; return a GENERIC client
+    // message (never echo e.message — it can carry provider internals / secrets).
+    console.error("[turn2] plan synthesis failed:", e);
     const err: TechnicalErrorResponse = {
       status: "error",
-      message:
-        "Turn 2 plan synthesis failed (model or schema error). " +
-        (e instanceof Error ? e.message : String(e)),
+      message: "A technical error occurred during turn 2 plan synthesis.",
     };
     return NextResponse.json(err, { status: 502 });
   }
+
+  // ===================================================================
+  // SECURITY — STEP 6.5: PIN CITATION FIELDS FROM THE REGISTRY + VERIFY QUOTES.
+  //
+  // FIX 2 (SEC-1, XSS): the model must NOT author the security-sensitive
+  // source_url (it renders as an anchor href; a model-emitted javascript:/data:
+  // URL would execute). The registry OWNS the citation. We OVERWRITE every
+  // recommendation's source_url / source_section / source_version with the
+  // matched dose-rule's registry values (falling back to the guideline's first
+  // rule). The model still PICKS the rule; the registry stamps the URL.
+  //
+  // FIX 3 (ADV-4): the model must NOT fabricate a verbatim quote (it renders as a
+  // cited blockquote). We VERIFY each quote is a real substring of the
+  // guideline's whole_document_text (whitespace/case-normalised). An
+  // unverifiable quote is BLANKED so the UI never shows a fake verbatim citation;
+  // the recommendation text is kept (it is the model's prose, not a fake quote).
+  // ===================================================================
+  const citationRule =
+    getDoseRule(routedId, classification.dose_rule_id) ??
+    guideline.dose_rules[0] ??
+    null;
+  const verifiedDocText = normalizeForQuoteMatch(guideline.whole_document_text);
+  plan = {
+    ...plan,
+    recommendations: plan.recommendations.map((rec) => {
+      const quoteVerified =
+        rec.quote.length > 0 &&
+        verifiedDocText.includes(normalizeForQuoteMatch(rec.quote));
+      return {
+        ...rec,
+        // FIX 2 — registry-stamped citation (the model's values are discarded).
+        source_section: citationRule?.source_section ?? rec.source_section,
+        source_version: citationRule?.source_version ?? rec.source_version,
+        source_url: citationRule?.source_url ?? rec.source_url,
+        // FIX 3 — blank an unverifiable quote (do not render a fabricated one).
+        quote: quoteVerified ? rec.quote : "",
+      };
+    }),
+  };
 
   // ===================================================================
   // EXECUTION — STEP 7: COMPLETENESS GATE. Deterministic, NO LLM judge. Every

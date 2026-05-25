@@ -257,6 +257,146 @@ describe("POST /api/turn2 — technical error (red) vs success vs incomplete (am
     expect((body.plan?.recommendations ?? []).length).toBeGreaterThan(0);
   });
 
+  it("FIX1 (P0): selected_guideline_id mismatches confirmed condition → abstention (audit catches wrong-drug)", async () => {
+    // The clinician confirmed condition "croup" but a (hand-crafted / buggy) POST
+    // carries selected_guideline_id for the ANAPHYLAXIS guideline. The route must
+    // honour the clicked id as the source of truth, run the NON-TAUTOLOGICAL audit
+    // (anaphylaxis guideline's registered condition != "croup"), and ABSTAIN —
+    // never silently dose the wrong drug. NO model call (we abstain before STEP A).
+    const res = await POST(
+      postCaseState(
+        makeCaseState({
+          selected_condition: "croup",
+          selected_guideline_id: "ascia-anaphylaxis-2024",
+        }),
+      ),
+    );
+    const body = (await res.json()) as {
+      status?: string;
+      reason?: string;
+      source?: string;
+    };
+    expect(body.status).toBe("abstention");
+    expect(body.reason).toBe("no_matching_guideline");
+    expect(body.source).toBe("no-guideline");
+    // The mismatch is caught BEFORE any model call — we never dose the wrong drug.
+    expect(generateTextCalls.length).toBe(0);
+  });
+
+  it("FIX1 (P0): selected_guideline_id matches confirmed condition → routes to croup, dose 2.13", async () => {
+    // The positive: condition "croup" + the croup guideline id → the clicked id
+    // is the source of truth, the audit passes, and the deterministic croup dose
+    // (14.2 × 0.15 = 2.13) is produced.
+    outputQueue.push(moderateClassification);
+    outputQueue.push(completeCroupPlan);
+
+    const res = await POST(
+      postCaseState(
+        makeCaseState({
+          selected_condition: "croup",
+          selected_guideline_id: "starship-croup-2020",
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      status?: string;
+      dose?: { dose_mg?: number };
+      provenance?: { routed_guideline_id?: string };
+    };
+    expect(body.status).toBe("ok");
+    expect(body.dose?.dose_mg).toBe(2.13);
+    expect(body.provenance?.routed_guideline_id).toBe("starship-croup-2020");
+  });
+
+  it("FIX3 (ADV-4): a fabricated quote is STRIPPED (not rendered as verbatim)", async () => {
+    // STEP B emits a recommendation whose `quote` is NOT in the guideline text.
+    // The route must verify quotes against whole_document_text and BLANK the
+    // unverifiable one (keeping the recommendation text) so the UI never shows a
+    // fake verbatim citation. A real quote on a second rec stays intact.
+    const planWithFakeQuote = {
+      ...completeCroupPlan,
+      recommendations: [
+        {
+          text: "Give oral dexamethasone 2.13 mg as a single dose.",
+          source_section:
+            "Croup — Corticosteroid treatment (dexamethasone dosing)",
+          source_version: "Starship NZ Clinical Guideline, 2020",
+          source_url: "https://www.starship.org.nz/guidelines/croup/",
+          // FABRICATED — these words are not in the Starship croup guideline.
+          quote:
+            "Administer 500 mg of amoxicillin every six hours for ten days.",
+        },
+        {
+          text: "Observe after treatment and discharge once stable.",
+          source_section: "Croup — Disposition / monitoring",
+          source_version: "Starship NZ Clinical Guideline, 2020",
+          source_url: "https://www.starship.org.nz/guidelines/croup/",
+          // REAL — a verbatim span from the guideline text.
+          quote: "dexamethasone 0.15 mg/kg ORALLY, single dose",
+        },
+      ],
+    };
+    outputQueue.push(moderateClassification);
+    outputQueue.push(planWithFakeQuote);
+
+    const res = await POST(postCaseState(makeCaseState()));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      status?: string;
+      plan?: { recommendations?: Array<{ quote?: string }> };
+    };
+    expect(body.status).toBe("ok");
+    const recs = body.plan?.recommendations ?? [];
+    // The fabricated quote is blanked; the real one is preserved verbatim.
+    expect(recs[0]?.quote).toBe("");
+    expect(recs[1]?.quote).toBe("dexamethasone 0.15 mg/kg ORALLY, single dose");
+  });
+
+  it("FIX2 (SEC-1): source_url is pinned from the registry, not the model's value", async () => {
+    // STEP B emits a malicious javascript: source_url. The route must OVERWRITE
+    // it with the registry's https URL (the model never authors the href).
+    const planWithEvilUrl = {
+      ...completeCroupPlan,
+      recommendations: [
+        {
+          ...completeCroupPlan.recommendations[0],
+          source_url: "javascript:alert(document.cookie)",
+        },
+      ],
+    };
+    outputQueue.push(moderateClassification);
+    outputQueue.push(planWithEvilUrl);
+
+    const res = await POST(postCaseState(makeCaseState()));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      plan?: { recommendations?: Array<{ source_url?: string }> };
+    };
+    const rec = (body.plan?.recommendations ?? [])[0];
+    // Registry-stamped: the model's javascript: URL is discarded.
+    expect(rec?.source_url).toBe(
+      "https://www.starship.org.nz/guidelines/croup/",
+    );
+  });
+
+  it("FIX5 (ADV-6): an oversized body is rejected 413 with NO model call", async () => {
+    // A body over the 64 KB cap → 413 "Request too large.", zero model calls.
+    const huge = "x".repeat(70 * 1024);
+    const res = await POST(
+      new Request("http://localhost/api/turn2", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ caseState: makeCaseState(), pad: huge }),
+      }),
+    );
+    expect(res.status).toBe(413);
+    const body = (await res.json()) as { status?: string; message?: string };
+    expect(body.status).toBe("error");
+    expect(body.message).toBe("Request too large.");
+    expect(generateTextCalls.length).toBe(0);
+  });
+
   it("severe 25kg case → cap fires: dose 12mg, capped true, binding_limit 12", async () => {
     outputQueue.push({
       severity_row: "severe",

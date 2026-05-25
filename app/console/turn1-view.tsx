@@ -25,6 +25,7 @@ import { cn } from "@/components/lib/utils";
 import { ProvenanceBadge } from "./provenance-badge";
 import type { Turn1Success } from "./fixtures";
 import type { DifferentialCondition } from "@/lib/schemas";
+import { getGuideline } from "@/registry/guidelines";
 
 /** must-not-miss FIRST, then likely, then possible (DESIGN.md D1). */
 const LIKELIHOOD_ORDER: Record<DifferentialCondition["likelihood"], number> = {
@@ -130,7 +131,17 @@ export function Turn1View({
 }: Turn1ViewProps) {
   const ranked = rankConditions(turn1.differential.conditions);
   const candidates = turn1.candidateGuidelines;
-  const condition =
+
+  // FIX 1 (P0) — each guideline button must carry ITS OWN guideline's condition,
+  // NOT a single shared condition_hints[0]. On a note with two candidate
+  // conditions, a shared condition could make "Apply Croup" send the anaphylaxis
+  // condition (or vice-versa). We look the clicked guideline up in the registry
+  // and pass its REGISTERED condition, so the click's condition always MATCHES
+  // the guideline — keeping the turn-2 audit consistent (and catching a true
+  // mismatch instead of producing a tautology). Falls back to condition_hints[0]
+  // only if a candidate id isn't in the registry (defensive).
+  const conditionForGuideline = (guidelineId: string): string =>
+    getGuideline(guidelineId)?.condition ??
     turn1.extractedFacts.condition_hints[0] ??
     ranked[0]?.name.toLowerCase() ??
     "";
@@ -189,7 +200,12 @@ export function Turn1View({
               key={g.guideline_id}
               data-guideline-id={g.guideline_id}
               disabled={!weightConfirmed || busy}
-              onClick={() => onSelectGuideline(g.guideline_id, condition)}
+              onClick={() =>
+                onSelectGuideline(
+                  g.guideline_id,
+                  conditionForGuideline(g.guideline_id),
+                )
+              }
             >
               Apply {g.label}
             </Button>
