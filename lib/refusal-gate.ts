@@ -9,14 +9,18 @@
 // (dosing on a guessed weight) is impossible by construction, before a key is
 // ever needed.
 //
-// Two distinct deterministic refusal paths, each with its OWN copy:
+// Three distinct deterministic refusal paths, each with its OWN copy:
 //   * weight missing       → reason "weight_missing"        (GUARD-1)
 //   * no matching guideline → reason "no_matching_guideline" (null-context abstain)
+//   * wrong guideline      → reason "wrong_guideline"       (condition/guideline mismatch)
 
 /** A minimal view of extracted facts — only the field this gate needs. */
 export type WeightFacts = { weight_kg?: number | null };
 
-export type RefusalReasonPreLLM = "weight_missing" | "no_matching_guideline";
+export type RefusalReasonPreLLM =
+  | "weight_missing"
+  | "no_matching_guideline"
+  | "wrong_guideline";
 
 export type RefusalDecision = {
   /** True iff the system must abstain before any model call. */
@@ -34,6 +38,10 @@ const WEIGHT_MISSING_COPY =
 const NO_GUIDELINE_COPY =
   "No local guideline matches this condition, so I won't guess a plan. " +
   "Confirm the condition or add a guideline to the registry.";
+
+const WRONG_GUIDELINE_COPY =
+  "The selected guideline is for a different condition than the one confirmed, " +
+  "so I won't apply it. Re-select the guideline that matches the confirmed condition.";
 
 /**
  * Pre-LLM weight gate. Returns refuse:true with NO side effects when weight is
@@ -65,5 +73,19 @@ export function noGuidelineAbstention(): RefusalDecision {
     refuse: true,
     reason: "no_matching_guideline",
     copy: NO_GUIDELINE_COPY,
+  };
+}
+
+/**
+ * The wrong-guideline abstention (a guideline was selected but it targets a
+ * different condition than the one confirmed). Distinct copy from both
+ * weight_missing and no_matching_guideline — a guideline EXISTS, it just
+ * does not match the confirmed condition. Also deterministic + pure.
+ */
+export function wrongGuidelineAbstention(): RefusalDecision {
+  return {
+    refuse: true,
+    reason: "wrong_guideline",
+    copy: WRONG_GUIDELINE_COPY,
   };
 }

@@ -19,7 +19,8 @@
 //        implausible_weight | invalid_dose_rule_id | rule_not_verified. Fires
 //        INSIDE execution, when the deterministic tool cannot safely compute.
 //      * RefusalDecision (lib/refusal-gate)      — reasons: weight_missing |
-//        no_matching_guideline. Fires BEFORE the model / when no guideline exists.
+//        no_matching_guideline | wrong_guideline. Fires BEFORE the model / when
+//        no guideline exists or the selected guideline mismatches the condition.
 //    They live at DIFFERENT layers (pre-LLM context-gate vs in-tool math-gate),
 //    so they SHOULD stay separate at their source. But the console UI
 //    (app/console) must render ONE amber "deliberate abstention" state regardless
@@ -134,6 +135,7 @@ export type AbstentionReason =
   // from RefusalDecision (lib/refusal-gate)
   | "weight_missing"
   | "no_matching_guideline"
+  | "wrong_guideline"
   // from DoseRefusal (tools/calculate_dose)
   | "implausible_weight"
   | "invalid_dose_rule_id"
@@ -174,17 +176,20 @@ export function fromDoseRefusal(r: DoseRefusal): Abstention {
 }
 
 /**
- * Adapt the pre-LLM / no-guideline refusal onto the unified Abstention. The
- * gate's `copy` is the headline. `source` is derived from the reason:
- * no_matching_guideline → "no-guideline"; weight_missing → "pre-llm". A refusal
- * with `refuse: false` is a caller bug (we only adapt a fired refusal), so we
- * fail closed with a defensive weight_missing abstention rather than emit a
- * malformed "abstention" that didn't actually abstain.
+ * Adapt the pre-LLM / no-guideline / wrong-guideline refusal onto the unified
+ * Abstention. The gate's `copy` is the headline. `source` is derived from the
+ * reason: no_matching_guideline | wrong_guideline → "no-guideline";
+ * weight_missing → "pre-llm". A refusal with `refuse: false` is a caller bug
+ * (we only adapt a fired refusal), so we fail closed with a defensive
+ * weight_missing abstention rather than emit a malformed "abstention" that
+ * didn't actually abstain.
  */
 export function fromRefusalDecision(d: RefusalDecision): Abstention {
   const reason = d.reason ?? "weight_missing";
   const source: AbstentionSource =
-    reason === "no_matching_guideline" ? "no-guideline" : "pre-llm";
+    reason === "no_matching_guideline" || reason === "wrong_guideline"
+      ? "no-guideline"
+      : "pre-llm";
   return {
     kind: "abstention",
     reason,
