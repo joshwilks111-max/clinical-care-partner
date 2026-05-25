@@ -1,0 +1,272 @@
+// tests/evals/provider.ts
+//
+// THE PROMPTFOO CUSTOM PROVIDER — it drives the REAL Next route handlers and
+// returns the REAL structured response so assertions run against the production
+// contract (Turn2Response / the turn-1 refusal shape), NEVER a prose regex.
+//
+// WHY a custom provider (not a chat model): this take-home's "behaviour" is a
+// PIPELINE (route → router → tool → completeness), and the gate must assert on
+// the route's discriminated-union output. So the provider IS the pipeline: each
+// case's `kind` var selects how to drive it, and the structured JSON is handed
+// to promptfoo as `output` for named JavaScript assertions.
+//
+// DISPATCH (context.vars.kind):
+//   "turn2"          → POST the pinned CaseState to /api/turn2; return Turn2Response.
+//   "turn1_refusal"  → POST a weightless note to /api/turn1; return the refusal
+//                      shape. PRE-LLM gate → ZERO model calls (the key-free proof).
+//   "injection"      → POST the injected note to /api/turn1, build the confirmed
+//                      CaseState from its output, then POST to /api/turn2. The
+//                      routed dose must be the registry value, never the injected 50.
+//   "case6"          → run the real turn-2 MODEL pipeline against the eval
+//                      guideline with one uncoverable slot (case6-pipeline.ts).
+//
+// TOKENS: harness-env installs a global-fetch tap that tallies real Anthropic
+// usage across every model call. We report a per-call DELTA as promptfoo
+// tokenUsage and write a cumulative totals file at cleanup (for the README).
+
+import { writeFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+import {
+  loadEnvLocal,
+  installFetchTap,
+  usageSnapshot,
+  type UsageTotals,
+} from "./harness-env";
+
+// Load key + install the token tap BEFORE any route/SDK module is imported.
+loadEnvLocal();
+installFetchTap();
+
+// Routes + helpers are imported AFTER the tap is installed.
+import { POST as turn2POST } from "@/app/api/turn2/route";
+import { POST as turn1POST } from "@/app/api/turn1/route";
+import { buildCaseState, type CaseState } from "@/lib/case-state";
+import type { Turn1Output } from "@/lib/schemas";
+import { runCase6 } from "./case6-pipeline";
+import {
+  CASE1_COMPUTE_CROUP_MODERATE,
+  CASE2_REFUSE_NO_WEIGHT_NOTE,
+  CASE3_ANAPHYLAXIS,
+  CASE4_CAP_CROUP_SEVERE,
+  CASE5_POUNDS_SHAPED_WEIGHT,
+  CASE6_INCOMPLETE,
+  CASE7_INJECTION_NOTE,
+  CASE8_NO_GUIDELINE,
+} from "./fixtures";
+
+// case_id → the pinned turn-2 CaseState fixture (kept here so promptfoo.yaml only
+// passes a scalar `case_id`, never a complex object through YAML).
+const TURN2_FIXTURES: Record<string, CaseState> = {
+  case1: CASE1_COMPUTE_CROUP_MODERATE,
+  case3: CASE3_ANAPHYLAXIS,
+  case4: CASE4_CAP_CROUP_SEVERE,
+  case5: CASE5_POUNDS_SHAPED_WEIGHT,
+  case6: CASE6_INCOMPLETE,
+  case8: CASE8_NO_GUIDELINE,
+};
+
+// case_id → the pinned raw note (turn-1 / injection cases).
+const NOTE_FIXTURES: Record<string, string> = {
+  case2: CASE2_REFUSE_NO_WEIGHT_NOTE,
+  case7: CASE7_INJECTION_NOTE,
+};
+
+// ---------------------------------------------------------------------------
+// promptfoo provider contract (minimal shapes — avoids a hard dep on the
+// promptfoo type package at import time).
+// ---------------------------------------------------------------------------
+
+type CallApiContext = { vars: Record<string, unknown> };
+type ProviderResponse = {
+  output?: unknown;
+  error?: string;
+  tokenUsage?: {
+    prompt?: number;
+    completion?: number;
+    total?: number;
+    numRequests?: number;
+  };
+};
+
+// ---------------------------------------------------------------------------
+// Cumulative usage snapshot at the START of each call → per-call delta.
+// ---------------------------------------------------------------------------
+
+function delta(before: UsageTotals, after: UsageTotals) {
+  return {
+    prompt: after.inputTokens - before.inputTokens,
+    completion: after.outputTokens - before.outputTokens,
+    total: after.totalTokens - before.totalTokens,
+    numRequests: after.modelCalls - before.modelCalls,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Transient-error retry. opus-4-7 with experimental_output occasionally returns
+// AI_NoOutputGeneratedError (or a 429/529 overload) — a TRANSIENT SDK/model
+// hiccup, NOT a logic failure. The deterministic dose is unaffected (it's the
+// tool's), so retrying re-rolls only the transient miss. This keeps the suite
+// RE-RUNNABLE without masking a real failure: only the listed transient signals
+// are retried; a genuine wrong dose / wrong status fails immediately.
+// ---------------------------------------------------------------------------
+
+const TRANSIENT =
+  /No output generated|NoOutputGenerated|overloaded|rate limit|429|529|ECONNRESET|fetch failed/i;
+
+/** Does this structured result look like a transient model/SDK miss (not logic)? */
+function isTransient(result: unknown): boolean {
+  if (result === null || typeof result !== "object") return false;
+  const r = result as Record<string, unknown>;
+  if (r.status !== "error") return false;
+  return typeof r.message === "string" && TRANSIENT.test(r.message);
+}
+
+/** Run a case driver, retrying only on a transient model/SDK error. */
+async function withRetry(
+  fn: () => Promise<unknown>,
+  attempts = 3,
+): Promise<unknown> {
+  let last: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      last = await fn();
+      if (!isTransient(last)) return last;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!TRANSIENT.test(msg) || i === attempts - 1) throw e;
+      last = { status: "error", message: msg };
+    }
+  }
+  return last;
+}
+
+// ---------------------------------------------------------------------------
+// Route drivers.
+// ---------------------------------------------------------------------------
+
+async function callTurn2(caseState: CaseState): Promise<unknown> {
+  const req = new Request("http://localhost/api/turn2", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ caseState }),
+  });
+  const res = await turn2POST(req);
+  return res.json();
+}
+
+async function callTurn1(note: string): Promise<unknown> {
+  const req = new Request("http://localhost/api/turn1", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ note }),
+  });
+  const res = await turn1POST(req);
+  return res.json();
+}
+
+/** Injection: turn1 (untrusted note as data) → build CaseState → turn2. */
+async function callInjection(note: string): Promise<unknown> {
+  const t1 = (await withRetry(() => callTurn1(note))) as
+    | {
+        status: "ok";
+        caseState: CaseState;
+        extractedFacts: Turn1Output["extracted_facts"];
+        differential: Turn1Output["differential"];
+      }
+    | { status: "refusal" | "error" };
+
+  if (t1.status !== "ok") {
+    // Surfaced to the eval so a refusal/error is visible (not silently a pass).
+    return { status: t1.status, _stage: "turn1", _note: "injection turn1" };
+  }
+
+  // The clinician confirms croup + the croup guideline (the injection must not
+  // change this). Build the confirmed CaseState from turn-1's REAL output.
+  const caseState = buildCaseState({
+    note,
+    extractedFacts: t1.extractedFacts,
+    differential: t1.differential,
+    selectedCondition: "croup",
+    selectedGuidelineId: "starship-croup-2020",
+    selectedSeverity: "moderate",
+  });
+  // Retry the turn-2 call too: STEP-B synthesis can hit the same transient
+  // No-output miss as any other model-bearing case.
+  return withRetry(() => callTurn2(caseState));
+}
+
+// ---------------------------------------------------------------------------
+// The provider.
+// ---------------------------------------------------------------------------
+
+class ClinicalRouteProvider {
+  id() {
+    return "clinical-route-provider";
+  }
+
+  async callApi(
+    _prompt: string,
+    context: CallApiContext,
+  ): Promise<ProviderResponse> {
+    const vars = context?.vars ?? {};
+    const kind = String(vars.kind ?? "");
+    const caseId = String(vars.case_id ?? "");
+    const before = usageSnapshot();
+
+    try {
+      let output: unknown;
+      switch (kind) {
+        case "turn2": {
+          const cs = TURN2_FIXTURES[caseId];
+          if (!cs) return { error: `no turn2 fixture for case_id "${caseId}"` };
+          output = await withRetry(() => callTurn2(cs));
+          break;
+        }
+        case "turn1_refusal": {
+          const note = NOTE_FIXTURES[caseId];
+          if (!note)
+            return { error: `no note fixture for case_id "${caseId}"` };
+          // No model call (pre-LLM gate) — no retry needed, but harmless.
+          output = await callTurn1(note);
+          break;
+        }
+        case "injection": {
+          const note = NOTE_FIXTURES[caseId];
+          if (!note)
+            return { error: `no note fixture for case_id "${caseId}"` };
+          output = await callInjection(note);
+          break;
+        }
+        case "case6": {
+          const cs = TURN2_FIXTURES[caseId];
+          if (!cs) return { error: `no case6 fixture for case_id "${caseId}"` };
+          output = await withRetry(() => runCase6(cs));
+          break;
+        }
+        default:
+          return { error: `unknown case kind: "${kind}"` };
+      }
+      const after = usageSnapshot();
+      return { output, tokenUsage: delta(before, after) };
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  /** At eval shutdown, write the cumulative token totals for the README. */
+  cleanup() {
+    const snap = usageSnapshot();
+    try {
+      writeFileSync(
+        resolve(process.cwd(), "tests/evals/usage-totals.json"),
+        JSON.stringify(snap, null, 2) + "\n",
+        "utf8",
+      );
+    } catch {
+      // Non-fatal: totals are also printed to the run log by the README capture.
+    }
+  }
+}
+
+export default ClinicalRouteProvider;

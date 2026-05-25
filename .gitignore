@@ -17,6 +17,15 @@
 /notes/
 TODO.local.md
 
+# -------- Eval (promptfoo) generated artefacts --------
+# The committed eval suite is promptfoo.yaml + tests/evals/*.ts. These are
+# per-run generated outputs (kept out of git). The reviewer-facing capture lives
+# at tests/evals/sample-output.txt, which IS committed.
+/.promptfoo/
+.promptfoo/
+/tests/evals/usage-totals.json
+/tests/evals/_*.json
+
 # -------- Stack-specific: Next.js + TypeScript --------
 # node_modules/ is covered by the global; these are Next-specific build/gen artefacts
 # the global misses.
