@@ -17,7 +17,12 @@
 /notes/
 TODO.local.md
 
-# -------- Stack-specific (fill in once chosen) --------
-# Node:   the global covers node_modules/, dist/, .next/ — usually nothing to add.
-# Python: the global covers __pycache__/, .venv/, .pytest_cache/ — usually nothing to add.
-# Add only patterns the global misses for your chosen toolchain.
+# -------- Stack-specific: Next.js + TypeScript --------
+# node_modules/ is covered by the global; these are Next-specific build/gen artefacts
+# the global misses.
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+/coverage/
+.vercel
