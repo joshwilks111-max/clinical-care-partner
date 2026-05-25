@@ -435,4 +435,77 @@ describe("POST /api/turn2 — technical error (red) vs success vs incomplete (am
     expect(body.dose?.capped).toBe(true);
     expect(body.dose?.binding_limit).toBe(12);
   });
+
+  it("INJECTION (in CI): model PROSE says 'give 50 mg' but the tool owns the number → dose 2.13, NOT 50", async () => {
+    // THE strongest safety guarantee, put in CI: the deterministic tool owns every
+    // number. STEP A picks the moderate croup rule; STEP B emits a plan whose
+    // recommendation PROSE claims "give 50 mg" (a wrong number the model authored)
+    // — but the route NEVER reads a dose from the model's text. The dose is the
+    // tool's: 14.2 × 0.15 = 2.13. The prose number is irrelevant to body.dose.
+    // (A real quote keeps the rec through quote-verification; the assertion is on
+    // the dose regardless.) This mirrors the live Promptfoo eval — now key-free.
+    const planWithProseFiftyMg = {
+      ...completeCroupPlan,
+      recommendations: [
+        {
+          // The model's PROSE asserts 50 mg — it must NOT become the dose.
+          text: "Give oral dexamethasone — give 50 mg as a single dose.",
+          source_section:
+            "Croup — Corticosteroid treatment (dexamethasone dosing)",
+          source_version: "Starship NZ Clinical Guideline, 2020",
+          source_url: "https://www.starship.org.nz/guidelines/croup/",
+          // REAL verbatim span → passes quote-verification (rec is kept).
+          quote: "dexamethasone 0.15 mg/kg ORALLY, single dose",
+        },
+      ],
+    };
+    outputQueue.push(moderateClassification);
+    outputQueue.push(planWithProseFiftyMg);
+
+    const res = await POST(postCaseState(makeCaseState()));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      status?: string;
+      dose?: { dose_mg?: number };
+    };
+    expect(body.status).toBe("ok");
+    // The TOOL owns the number: 14.2 × 0.15 = 2.13, NOT the model's 50.
+    expect(body.dose?.dose_mg).toBe(2.13);
+    expect(body.dose?.dose_mg).not.toBe(50);
+  });
+
+  it("null weight in a hand-crafted CaseState → dose-tool GUARD-7 abstains (implausible_weight), STEP B never runs", async () => {
+    // isCaseStateLike accepts weight_kg:null, so a hand-crafted POST can carry one.
+    // STEP A classifies fine, but the route's defensive `weight ?? NaN` sentinel
+    // feeds NaN to the tool → GUARD-7 abstains (implausible_weight) rather than
+    // dosing on a non-number. The backstop fires AFTER STEP A but BEFORE STEP B,
+    // so synthesis never runs (generateText called exactly once).
+    outputQueue.push(moderateClassification);
+    outputQueue.push(completeCroupPlan); // must NOT be consumed (STEP B never runs)
+
+    const res = await POST(
+      postCaseState(
+        makeCaseState({
+          extracted_facts: {
+            condition_hints: ["croup"],
+            severity: "moderate",
+            weight_kg: null,
+            age: "3yo",
+            profession: null,
+            setting: null,
+          },
+        }),
+      ),
+    );
+    const body = (await res.json()) as {
+      status?: string;
+      reason?: string;
+      source?: string;
+    };
+    expect(body.status).toBe("abstention");
+    expect(body.reason).toBe("implausible_weight");
+    expect(body.source).toBe("dose-tool");
+    // Only STEP A ran; the dose backstop abstained before STEP B (synthesis).
+    expect(generateTextCalls.length).toBe(1);
+  });
 });

@@ -154,3 +154,29 @@ describe("POST /api/turn1 — bounded transient-only retry", () => {
     expect(actionQueue.length).toBe(1);
   });
 });
+
+describe("POST /api/turn1 — POST-model weight gate (distinct from the pre-LLM gate)", () => {
+  it("note HAS a kg weight but the model extracts weight_kg:null → refusal AFTER the model ran", async () => {
+    // The pre-LLM gate is regex-presence only ("14.2 kg" is present → it passes
+    // and STEP 2 runs). But the MODEL is the authoritative extractor and may still
+    // judge the figure not a usable patient weight, returning weight_kg:null. The
+    // POST-model defensive gate must catch THAT and refuse — never proceed to build
+    // a CaseState with a null weight. This proves the post-model gate (not the
+    // pre-LLM one): generateText WAS called exactly once before the refusal.
+    const outputWithNullWeight = {
+      ...validTurn1Output,
+      extracted_facts: { ...validTurn1Output.extracted_facts, weight_kg: null },
+    };
+    actionQueue.push({ output: outputWithNullWeight });
+
+    const res = await POST(postNote(NOTE_WITH_WEIGHT));
+    expect(res.status).toBe(200); // a refusal is a deliberate decision (200).
+    const body = (await res.json()) as { status?: string; reason?: string };
+    expect(body.status).toBe("refusal");
+    expect(body.reason).toBe("weight_missing");
+    // THE proof it's the POST-model gate: the model DID run (pre-LLM gate passed
+    // because the note carries a kg figure) — exactly one call, then refused.
+    expect(generateTextCalls.length).toBe(1);
+    expect(actionQueue.length).toBe(0);
+  });
+});

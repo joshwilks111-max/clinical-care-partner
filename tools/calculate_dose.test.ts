@@ -305,6 +305,40 @@ describe("GUARD-8 — rounding applied from the rule (data, not inference)", () 
     expect(r.dose_mg).toBe(0.15);
   });
 
+  it("round NEAREST 0.01 rounds DOWN just below .5: 0.144 → 0.14 (stub)", () => {
+    // 'nearest' was only tested on the round-UP side. This exercises the DOWN
+    // side: value sits below the half-increment so Math.round rounds toward zero.
+    const r = expectSuccess(
+      calculateDoseFromRule(
+        stubRule({
+          mg_per_kg: 0.0144,
+          max_mg: 100,
+          rounding: { direction: "nearest", increment_mg: 0.01 },
+        }),
+        10, // 10 × 0.0144 = 0.144 → nearest 0.01 → 0.14 (rounds DOWN)
+      ),
+    );
+    expect(r.dose_mg).toBe(0.14);
+  });
+
+  it("increment_mg <= 0 short-circuits (divide-by-zero guard): raw passes through unchanged (stub)", () => {
+    // applyRounding has `if (increment_mg <= 0) return value` to avoid dividing by
+    // zero (which would yield Infinity/NaN). A rule with increment_mg:0 must leave
+    // the raw value finite + untouched.
+    const r = expectSuccess(
+      calculateDoseFromRule(
+        stubRule({
+          mg_per_kg: 0.333,
+          max_mg: 100,
+          rounding: { direction: "down", increment_mg: 0 },
+        }),
+        1, // 1 × 0.333 = 0.333, no rounding applied → 0.333
+      ),
+    );
+    expect(r.dose_mg).toBe(0.333);
+    expect(Number.isFinite(r.dose_mg)).toBe(true);
+  });
+
   it("no rounding rule (null) leaves the raw value", () => {
     const r = expectSuccess(
       calculateDoseFromRule(
