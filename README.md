@@ -10,7 +10,7 @@ quote" — the layer above: **weigh the differential → clinician steers → ap
 
 ## 1. Try in 60 seconds
 
-**Live:** `[LIVE_URL — to be inserted after deploy]` — key server-side, zero reviewer setup.
+**Live:** **https://clinical-care-partner.vercel.app** — key server-side, zero reviewer setup.
 
 Four **one-click demo buttons** — the reviewer never types a word; each POSTs a pre-filled,
 verified note and produces the same result every run:
