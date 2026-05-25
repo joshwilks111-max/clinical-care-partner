@@ -141,10 +141,15 @@ export function Console() {
                 data-demo-id={demo.id}
                 disabled={busy !== null}
                 onClick={() => runTurn1(demo)}
+                // min-h 44px: the demo buttons are the primary (only) tap target —
+                // a reviewer on a tablet/phone needs a real touch target.
+                className="h-auto min-h-[44px] py-2"
               >
                 {demo.label}
               </Button>
-              <span className="mt-1 max-w-[200px] text-[10.5px] leading-tight text-muted-foreground">
+              {/* Caption carries real clinical info (the case + expected dose), so
+                  it must be legible: 12px (not 10.5) + AA-contrast text colour. */}
+              <span className="mt-1 max-w-[200px] text-xs leading-tight text-foreground/70">
                 {demo.caption}
               </span>
             </div>
