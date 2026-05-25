@@ -168,6 +168,8 @@ describe("POST /api/turn2 — abstentions (amber), before/around the model", () 
   // through to route(); with a croup id present it would instead hit the
   // wrong-guideline AUDIT branch (a different reason), which is the mismatch
   // test below — keeping them separate is the whole point of this control.
+  // (The default croup differential collapses to plan, so the Task-9 gate falls
+  // through to the router branch this test targets — the gate is transparent here.)
   it("unknown condition + no clicked guideline (route null) → amber abstention, NO model call", async () => {
     const res = await POST(
       postCaseState(
@@ -190,7 +192,8 @@ describe("POST /api/turn2 — abstentions (amber), before/around the model", () 
 
   // NEGATIVE CONTROL 2 (null-router branch via empty condition): no condition
   // confirmed AND no guideline clicked → route("") returns null. Stays
-  // no_matching_guideline (NOT wrong_guideline).
+  // no_matching_guideline (NOT wrong_guideline). (As above, the default croup
+  // differential collapses to plan, so the Task-9 gate falls through first.)
   it("empty confirmed condition + no clicked guideline → amber abstention, NO model call", async () => {
     const res = await POST(
       postCaseState(
