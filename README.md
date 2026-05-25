@@ -59,6 +59,8 @@ confirmed outputs into turn 2 (zero re-extraction).
 
 ## 4. Run locally
 
+Shipped: Next.js + Vercel AI SDK 6 (`@ai-sdk/anthropic`). Why: spike confirmed tool-call + `Output.object` structured output + `stopWhen` work cleanly together on claude-opus-4-7 (`spike/turn2-shape.ts`) — gains streaming UI + AI Elements drop-in + one-line provider swap for the eval.
+
 `[PLACEHOLDER: filled after the stack spike — Build step 4. Live URL is the primary path; local is the
 documented fallback.]`
 
