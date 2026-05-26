@@ -173,12 +173,28 @@ function normFinding(s: string): string {
 
 /**
  * True iff the must-not-miss finding shares its clinical content with at least
- * one benign-anchor finding from a treatable condition. Match is normalized
- * substring containment in either direction — "stridor at rest" inside
- * "stridor at rest in a toddler" matches, but "rash" inside "purpuric rash"
- * also matches (intentional: same finding, qualified). The benign-anchor
- * filter (only treatable conditions contribute) prevents must-not-miss-only
- * symptoms from accidentally demoting each other.
+ * one benign-anchor finding from a treatable condition.
+ *
+ * ONE-DIRECTIONAL match (review/adversarial finding #2, 2026-05-27): the
+ * benign-anchor (treatable's positive_evidence) must CONTAIN the must-not-miss
+ * finding — never the reverse. The earlier bidirectional match let a generic
+ * anchor on a treatable strip discriminating qualifier-bearing positives off
+ * a must-not-miss:
+ *   treatable Croup positives = ["rash"]            (model over-listed, generic)
+ *   MNM meningococcaemia positives = ["purpuric rash"]
+ *   bidirectional: "purpuric rash".includes("rash") = true → demote the MNM's
+ *   discriminating qualifier into the audit trail → Rule 2 no longer fires →
+ *   gate plans → doses past undischarged danger. Real attack path.
+ *
+ * One-directional (anchorKey.includes(mnmKey)): "stridor at rest" (treatable)
+ * still covers "stridor at rest" (MNM) and matches via the canonical-finding-
+ * strings prompt rule. A treatable's "rash" no longer matches MNM's "purpuric
+ * rash" — the qualifier survives, Rule 2 fires, gate abstains. Correct.
+ *
+ * Counterpart guarantee: the Turn 1 prompt's FINDING-STRING DISCIPLINE asks
+ * the model to use IDENTICAL strings for shared findings across conditions, so
+ * exact equality (a subset of one-directional containment) catches the genuine
+ * "same finding, repeated verbatim" case the demote was designed for.
  */
 function findingShared(mnmFinding: string, benignAnchors: string[]): boolean {
   const mnmKey = normFinding(mnmFinding);
@@ -186,7 +202,7 @@ function findingShared(mnmFinding: string, benignAnchors: string[]): boolean {
   return benignAnchors.some((anchor) => {
     const anchorKey = normFinding(anchor);
     if (anchorKey.length === 0) return false;
-    return mnmKey.includes(anchorKey) || anchorKey.includes(mnmKey);
+    return anchorKey.includes(mnmKey);
   });
 }
 

@@ -151,11 +151,26 @@ export function useTurn15Flow(
     setTurn15(data);
     setTurn15Busy(null);
     if (data.status === "recorded") {
-      onCaseStateUpdated(data.caseState);
-      storeRecommendation({
-        recommended_condition: data.recommended_condition,
-        recommended_guideline: data.recommended_guideline,
-      });
+      // Adversarial review finding #4 (2026-05-27) — write-side ask-validity
+      // check. F-014 snapshotted the ask at function entry (read side); this
+      // guards the write side. If a fresh runDecide invalidated our ask while
+      // the answer fetch was in flight (parent state change, programmatic
+      // re-run), pendingAsk now points at a NEW ask. Calling
+      // onCaseStateUpdated with the answer-mutated caseState would write the
+      // demoted differential into the parent while the UI shows the new
+      // decide's question — Turn 2 would then dose against the demoted view.
+      // The check: still pointing at the same ask we answered? If not, drop
+      // the write — the audit log already records the engagement via the
+      // server-stored discriminating_qa entry; the parent's caseState stays
+      // consistent with the UI's current decide state.
+      const askStillActive = pendingAsk === askSnapshot;
+      if (askStillActive) {
+        onCaseStateUpdated(data.caseState);
+        storeRecommendation({
+          recommended_condition: data.recommended_condition,
+          recommended_guideline: data.recommended_guideline,
+        });
+      }
     }
   }
 

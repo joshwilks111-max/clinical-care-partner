@@ -60,6 +60,16 @@ These softenings are appropriate for a 4-day take-home demo where the registry h
 
 The first thing to do at any of those triggers: re-run a calibration QA pass against the full demo fixture set + a held-out sample, measure how often each softening fires, and either re-tighten the prompt (preferred) or harden the gate (if prompt drift is unrecoverable).
 
+### Adversarial-review follow-ups (P0 deferred — surfaced by /review subagent 2026-05-27)
+
+The /review pre-landing adversarial pass surfaced three real findings; two were fixed in this PR (one-directional `findingShared` for the purpuric-rash class, write-side ask-validity check in `runAnswer`). The third is genuine but a wider design call and is deferred:
+
+| # | Item | Why P0 | Effort (human/CC) | Trigger to build |
+|---|---|---|---|---|
+| AR1 | **Answer-phase ask nonce** — Turn 1.5 `phase:"answer"` accepts client-supplied `target` strings and runs `applyAnswer` against the differential without proving the server actually issued a prior ask for this `caseState.note_hash`. A hand-crafted POST with `target: "epiglottitis", answer: "absent"` silently demotes epiglottitis to "possible" in the returned `caseState`. The client then POSTs to Turn 2, the gate sees zero unresolved must-not-miss, and doses past undischarged danger. The primary-review carve-out ("forged engaged=true makes the gate MORE conservative") covered Turn 2's READ of `discriminating_qa`, not the differential-mutation side effect. | Real bypass path exists even if behind a CSRF boundary. Demo-blast-radius today; production-critical with real PHI. | M / S — HMAC nonce over `target + note_hash + server-secret`, embedded in decide's `AskResponse`, required on answer. Server validates + single-use. | First real-PHI use, OR moving Turn 1.5 outside same-origin trust boundary, OR adding any non-UI client (CLI, scripts). |
+
+The other two adversarial findings (small `CONDITION_META`, widened ask-target schema, prompt MUST-NOT-MISS DISCIPLINE) are calibration concerns already covered by the S1-S7 softening manifest above — they have their own trigger-to-revisit conditions.
+
 ## Notes
 - Items 1 & 4 were the strongest "if I had another day" beats — and they were BUILT (the strongest *delivered* beats: 1 = the nastier-failure safety guard with a distinct `wrong_guideline` reason; 4 = the real care-partner collapse loop, one round, eval-proven). The remaining deferred set leads with #10 (mild no-drug arm), #3 (deterministic severity), #6 (live-consult / multi-round collapse), #8 (KG-scale retrieval).
 - **Item 10 (mild watch arm)** is independent clinician validation: an urgent-care doc (review, 2026-05-25) reconstructed the severity→treatment-arm ladder from the outside and named "watch, low-dose steroid, high-dose steroid, neb adrenaline + secondary care." The build already models the steroid-dose arms (moderate/severe) + escalation/disposition; only the mild *no-drug* arm is deferred (it needs a disposition-only plan shape, a different output *kind* from the dose arms). Deferred to hold v1 scope, not because it was missed.

@@ -210,13 +210,18 @@ describe("F-018a — askable set narrows the unresolved-MNM blocker pool", () =>
 });
 
 describe("F-018b — demoteSharedFindings: normalized substring match", () => {
-  it("catches 'stridor at rest' ⊂ 'stridor at rest in a toddler'", () => {
+  it("demotes when treatable anchor and MNM finding are IDENTICAL (canonical-strings prompt path)", () => {
+    // The Turn 1 prompt's FINDING-STRING DISCIPLINE asks the model to use
+    // identical strings for shared findings. When followed, exact equality
+    // (a subset of one-directional containment) catches the genuine "same
+    // finding, repeated verbatim across conditions" case the demote was
+    // designed for. This is the primary path post-adversarial-review #2.
     const d: Differential = {
       conditions: [
         {
           name: "foreign body aspiration",
           likelihood: "must-not-miss",
-          positive_evidence: ["stridor at rest in a toddler"],
+          positive_evidence: ["stridor at rest"],
           negative_evidence: [],
         },
         {
@@ -240,27 +245,103 @@ describe("F-018b — demoteSharedFindings: normalized substring match", () => {
     ).toBe(true);
   });
 
-  it("catches the reverse: benign 'stridor' ⊂ MNM 'stridor at rest'", () => {
+  it("demotes when treatable anchor CONTAINS the MNM finding (longer anchor, shorter MNM)", () => {
+    // One-directional: anchor ⊇ MNM matches. This is the safe direction —
+    // the treatable's longer phrasing already covers the MNM's generic.
     const d: Differential = {
       conditions: [
         {
-          name: "epiglottitis",
+          name: "foreign body aspiration",
           likelihood: "must-not-miss",
-          positive_evidence: ["stridor at rest"],
+          positive_evidence: ["stridor"],
           negative_evidence: [],
         },
         {
           name: "croup",
           likelihood: "likely",
-          positive_evidence: ["stridor"],
+          positive_evidence: ["stridor at rest"],
           negative_evidence: [],
         },
       ],
       candidate_guidelines: [],
     };
     const demoted = demoteSharedFindings(d, MAP);
-    const epi = demoted.conditions.find((c) => c.name === "epiglottitis");
-    expect(epi?.positive_evidence).toEqual([]);
+    const fb = demoted.conditions.find(
+      (c) => c.name === "foreign body aspiration",
+    );
+    expect(fb?.positive_evidence).toEqual([]);
+  });
+
+  // F-018 + Adversarial #2 (2026-05-27) — Critical safety regression test.
+  // The earlier bidirectional findingShared let a GENERIC anchor on a treatable
+  // strip discriminating qualifier-bearing positives off a must-not-miss.
+  // Worked example: Croup over-lists "rash", meningococcaemia has "purpuric
+  // rash" — bidirectional would demote the MNM's purpuric qualifier into the
+  // audit trail. One-directional protects against this.
+  it("DOES NOT demote when MNM finding has a discriminating qualifier and anchor is the generic stem", () => {
+    const d: Differential = {
+      conditions: [
+        {
+          name: "meningococcaemia",
+          likelihood: "must-not-miss",
+          // Discriminating qualifier ("purpuric") — must NOT be stripped.
+          positive_evidence: ["purpuric rash"],
+          negative_evidence: [],
+        },
+        {
+          name: "croup",
+          likelihood: "likely",
+          // Generic anchor — would have stripped MNM under bidirectional.
+          positive_evidence: ["rash"],
+          negative_evidence: [],
+        },
+      ],
+      candidate_guidelines: [],
+    };
+    const demoted = demoteSharedFindings(d, MAP);
+    const mng = demoted.conditions.find((c) => c.name === "meningococcaemia");
+    // The purpuric qualifier survives — MNM stays as positive must-not-miss.
+    expect(mng?.positive_evidence).toEqual(["purpuric rash"]);
+    expect(
+      mng?.negative_evidence.some((s) =>
+        s.includes("[shared / non-discriminating]"),
+      ),
+    ).toBe(false);
+    // Rule 2 (positive must-not-miss → abstain) MUST still fire downstream.
+    const decision = decideCollapse(demoted, MAP, 0);
+    expect(decision.action).toBe("abstain");
+    expect(decision.reason).toBe("unresolved_dangers");
+  });
+
+  it("DOES NOT demote when MNM finding is LONGER than treatable anchor (qualifier survives)", () => {
+    // Same shape as the canonical F-018 motivating case BEFORE the prompt
+    // started enforcing identical strings — proves one-directional refuses
+    // to strip qualifier text even when the strings differ in length.
+    const d: Differential = {
+      conditions: [
+        {
+          name: "foreign body aspiration",
+          likelihood: "must-not-miss",
+          positive_evidence: ["stridor at rest in a toddler"],
+          negative_evidence: [],
+        },
+        {
+          name: "croup",
+          likelihood: "likely",
+          positive_evidence: ["stridor at rest"],
+          negative_evidence: [],
+        },
+      ],
+      candidate_guidelines: [],
+    };
+    const demoted = demoteSharedFindings(d, MAP);
+    const fb = demoted.conditions.find(
+      (c) => c.name === "foreign body aspiration",
+    );
+    // The MNM's qualifier-bearing string survives. The prompt asks the
+    // model to use identical strings — this is the belt-and-braces safety
+    // net for the case where it doesn't.
+    expect(fb?.positive_evidence).toEqual(["stridor at rest in a toddler"]);
   });
 
   it("does NOT demote a finding that only appears on must-not-miss conditions (no benign anchor)", () => {
