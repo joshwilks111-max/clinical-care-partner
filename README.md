@@ -143,6 +143,23 @@ own note/transcript), and the **Refusal** demo needs no key at all.
   decrypt locally (`vercel env add ANTHROPIC_API_KEY development`, then `vercel env pull
   .env.local --environment=development`). Production stays sensitive; Development can be plaintext.
 
+### Deployment
+
+- **Live URL:** https://clinical-care-partner.vercel.app
+- **Auto-deploy:** the Vercel project is connected to this GitHub repo via
+  Vercel's native git integration (set up on the Vercel project dashboard, no
+  workflow file required). Every push to `main` — i.e. every merged PR —
+  triggers a production build + deploy on Vercel's infrastructure. The live
+  URL updates a few minutes after merge, no human in the loop. Preview
+  deployments fire on every other branch push, so each PR gets its own
+  preview URL for review.
+- **Manual deploy** (still supported, e.g. for hot-fixing without going
+  through a PR): from a Vercel-linked checkout (`.vercel/project.json`
+  present — get it via `vercel link --yes --project clinical-care-partner
+  --scope joshwilks111-maxs-projects` if missing), run
+  `vercel deploy --prod --yes`. Manual + native paths don't race in
+  practice — they both go through Vercel's pipeline.
+
 ---
 
 ## 5. Evals
