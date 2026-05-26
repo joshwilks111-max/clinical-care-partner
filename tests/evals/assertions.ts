@@ -398,11 +398,18 @@ export function case10_status_abstention(output: unknown): AssertResult {
       );
 }
 
-export function case10_reason_no_guideline(output: unknown): AssertResult {
+export function case10_reason_unresolved_dangers(
+  output: unknown,
+): AssertResult {
+  // F-016D — case10 is the engaged-present epiglottitis case where Rule 2
+  // (positive must-not-miss) fires. The abstain reason is "unresolved_dangers"
+  // (undischarged danger; a guideline DOES exist for the treatable), NOT
+  // "no_matching_guideline". Pre-F-016D this returned the wrong copy that
+  // lied about the cause. The new wire reason matches the actual blocker.
   const o = asObj(output);
-  return o.reason === "no_matching_guideline"
+  return o.reason === "unresolved_dangers"
     ? ok()
     : fail(
-        `expected reason "no_matching_guideline", got ${JSON.stringify(o.reason)}`,
+        `expected reason "unresolved_dangers", got ${JSON.stringify(o.reason)}`,
       );
 }

@@ -244,5 +244,5 @@ tests:
         value: file://tests/evals/assertions.ts:case10_status_abstention
         metric: case10.status_abstention
       - type: javascript
-        value: file://tests/evals/assertions.ts:case10_reason_no_guideline
-        metric: case10.reason_no_guideline
+        value: file://tests/evals/assertions.ts:case10_reason_unresolved_dangers
+        metric: case10.reason_unresolved_dangers
