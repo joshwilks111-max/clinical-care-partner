@@ -15,12 +15,17 @@ import { Shimmer } from "@/components/ai-elements/shimmer";
 /** The phases the console can be in while a request is in flight. */
 export type Phase =
   | "building-differential"
+  | "checking-safety"
   | "retrieving-guideline"
   | "calculating-dose"
   | "checking-completeness";
 
 const PHASE_LABEL: Record<Phase, string> = {
   "building-differential": "Building differential…",
+  // Turn 1.5 (the collapse decider): the only phase that may call the model is
+  // "ask", where it PHRASES one discriminating question. The label is honest —
+  // we are checking the must-not-miss before any guideline can be applied.
+  "checking-safety": "Checking for must-not-miss conditions…",
   "retrieving-guideline": "Retrieving guideline…",
   "calculating-dose": "Calculating dose…",
   "checking-completeness": "Checking completeness…",

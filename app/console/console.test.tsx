@@ -195,19 +195,45 @@ describe("Console — paste-your-own intake (Task B, free-form note/transcript)"
     // The reset that actually matters is setTurn2(null) on a new run: without it,
     // a previous note's DOSE result would still render under the fresh turn-1 —
     // the dangerous "two notes' analysis stacked" bug. Drive a full turn-1 →
-    // turn-2 (dose), then paste a new note and assert the old dose is GONE.
-    // Call 1 = turn-1 success, Call 2 = turn-2 OK (dose), Call 3 = turn-1 refusal.
-    const responses = [
-      jsonResponse(FIXTURE_TURN1_SUCCESS),
-      jsonResponse(FIXTURE_TURN2_OK),
-      jsonResponse({
-        status: "refusal",
-        reason: "weight_missing",
-        message: "Weight is required.",
-      }),
-    ];
-    let call = 0;
-    const fetchMock = vi.fn<typeof fetch>(async () => responses[call++]!);
+    // turn-1.5 decide (plan short-circuit) → turn-2 (dose), then paste a new note
+    // and assert the old dose is GONE.
+    //
+    // Confirming weight now ALWAYS calls turn1.5; we mock its decide phase to
+    // return status:"ok" (plan) so the EXISTING guideline-button → turn2 flow is
+    // unchanged (Jack's croup behaves exactly as before). A per-ENDPOINT router
+    // is used (not a positional array) so the extra turn1.5 call can't desync the
+    // sequence. The 2nd turn1 (paste) returns a refusal.
+    let turn1Calls = 0;
+    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input);
+      if (url === "/api/turn1") {
+        turn1Calls += 1;
+        // 1st turn1 = success differential; 2nd turn1 (paste) = refusal.
+        return turn1Calls === 1
+          ? jsonResponse(FIXTURE_TURN1_SUCCESS)
+          : jsonResponse({
+              status: "refusal",
+              reason: "weight_missing",
+              message: "Weight is required.",
+            });
+      }
+      if (url === "/api/turn1.5") {
+        // decide → plan short-circuit → ok (0 model calls). The croup demo case.
+        return jsonResponse({
+          status: "ok",
+          guidelineId: "starship-croup-2020",
+          caseState: FIXTURE_TURN1_SUCCESS.caseState,
+          provenance: {
+            phase: "decide",
+            action: "plan",
+            target: null,
+            round: 0,
+          },
+        });
+      }
+      // /api/turn2 → dose ok.
+      return jsonResponse(FIXTURE_TURN2_OK);
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Console />);
@@ -218,8 +244,14 @@ describe("Console — paste-your-own intake (Task B, free-form note/transcript)"
     await waitFor(() =>
       expect(screen.getByTestId("turn1-view")).toBeInTheDocument(),
     );
-    // Confirm weight (left panel), then pick the guideline → turn 2 → dose.
+    // Confirm weight (left panel) → turn1.5 decide → plan ok → buttons appear.
     fireEvent.click(screen.getByTestId("confirm-weight-button"));
+    await waitFor(() =>
+      expect(
+        document.querySelector('[data-guideline-id="starship-croup-2020"]'),
+      ).toBeInTheDocument(),
+    );
+    // Pick the guideline → turn 2 → dose.
     fireEvent.click(
       document.querySelector(
         '[data-guideline-id="starship-croup-2020"]',
