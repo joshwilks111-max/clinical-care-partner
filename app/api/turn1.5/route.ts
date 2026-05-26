@@ -59,10 +59,14 @@ import { generateText, Output, stepCountIs } from "ai";
 import {
   decideCollapse,
   applyAnswer,
+  demoteSharedFindings,
   type ConditionGuidelineMap,
 } from "@/lib/collapse";
 import { buildConditionGuidelineMap } from "@/registry/guidelines";
-import { noGuidelineAbstention } from "@/lib/refusal-gate";
+import {
+  noGuidelineAbstention,
+  unresolvedDangersAbstention,
+} from "@/lib/refusal-gate";
 import { withTransientRetry } from "@/lib/retry";
 import {
   fromRefusalDecision,
@@ -77,6 +81,7 @@ import {
   type ConfirmedFactsSummary,
 } from "@/prompts/turn1.5";
 import { isCaseStateLike, type CaseState } from "@/lib/case-state";
+import type { Differential } from "@/lib/schemas";
 
 // Node runtime (NOT edge): the SDK needs it. maxDuration 300s matches turn1/turn2.
 export const runtime = "nodejs";
@@ -233,6 +238,61 @@ function noGuidelineResponse(): AbstentionResponse {
   return toAbstentionResponse(fromRefusalDecision(noGuidelineAbstention()));
 }
 
+/** The unresolved-dangers abstention, as a wire response. Fires when the
+ *  (post-demote) differential carries a positive must-not-miss (Rule 2) OR
+ *  multiple unresolved must-not-miss conditions (Rule 3) — i.e. dangers we
+ *  cannot rule out from this note alone. Distinct copy from
+ *  noGuidelineResponse: a treatable guideline DOES exist, the data just
+ *  doesn't let us safely route to it. */
+function unresolvedDangersResponse(): AbstentionResponse {
+  return toAbstentionResponse(
+    fromRefusalDecision(unresolvedDangersAbstention()),
+  );
+}
+
+/** Pick the right abstention wire response for a "abstain" decision: name the
+ *  WHY (multiple dangers vs no matching guideline) so the UI copy is honest.
+ *  Uses the post-demote differential — the same view decideCollapse saw. */
+function abstainResponseFor(
+  differential: Differential,
+  map: ConditionGuidelineMap,
+): AbstentionResponse {
+  // Mirror decideCollapse's internal predicates (we don't import them to keep
+  // collapse.ts's surface minimal): a "danger" is either a positive must-not-
+  // miss (Rule 2 trigger) or a count > 1 of unresolved must-not-miss (Rule 3).
+  const conditions = differential.conditions;
+  const hasPositiveMnm = conditions.some(
+    (c) => c.likelihood === "must-not-miss" && c.positive_evidence.length > 0,
+  );
+  const unresolvedMnmCount = conditions.filter(
+    (c) => c.likelihood === "must-not-miss" && c.positive_evidence.length === 0,
+  ).length;
+  // Treatable-tops count via the same norm spirit as collapse: stripped
+  // parentheticals + lowercase. We hash by the registry map's already-
+  // normalized keys, so we just have to normalize the differential names
+  // the same way (matching lib/collapse.ts norm()).
+  const norm = (s: string) =>
+    s
+      .toLowerCase()
+      .trim()
+      .replace(/\s*\([^)]*\)\s*$/, "")
+      .trim()
+      .replace(/\s+/g, " ");
+  const treatableTopsCount = conditions.filter(
+    (c) =>
+      c.likelihood !== "must-not-miss" &&
+      Object.prototype.hasOwnProperty.call(map, norm(c.name)),
+  ).length;
+
+  // Dangerous-conditions explanation if any danger predicate is true AND we
+  // have at least one treatable top (otherwise "no matching guideline" is
+  // genuinely the right message — there's no benign hypothesis to route to).
+  if (treatableTopsCount > 0 && (hasPositiveMnm || unresolvedMnmCount > 1)) {
+    return unresolvedDangersResponse();
+  }
+  return noGuidelineResponse();
+}
+
 // ---------------------------------------------------------------------------
 // POST handler.
 // ---------------------------------------------------------------------------
@@ -310,8 +370,16 @@ async function handleDecide(
   caseState: CaseState,
   map: ConditionGuidelineMap,
 ): Promise<Response> {
-  // EXECUTION: the deterministic core decides — NOT the model.
-  const decision = decideCollapse(caseState.differential, map, caseState.round);
+  // EXECUTION: demote shared findings BEFORE deciding. A finding the live model
+  // lists as positive on multiple must-not-miss conditions BECAUSE it is also
+  // positive on the leading treatable is shared / non-discriminating — it
+  // cannot confirm any one of them. Demoting prevents Rule 2 (positive
+  // must-not-miss → abstain) from over-firing on clinically routine fact
+  // patterns where one finding (e.g. "stridor at rest") is consistent with
+  // both the treatable and several danger conditions. Discriminating findings
+  // (only on the danger) are preserved — Rule 2 still triggers correctly.
+  const differential = demoteSharedFindings(caseState.differential, map);
+  const decision = decideCollapse(differential, map, caseState.round);
 
   // Audit log of the decision (action + target), mirroring turn2:262.
   console.log(
@@ -325,9 +393,11 @@ async function handleDecide(
     round: caseState.round,
   };
 
-  // "abstain" → NO model call. Fail toward stopping (no clean single guideline).
+  // "abstain" → NO model call. Fail toward stopping. Pick the right copy:
+  // "unresolved_dangers" when a treatable hypothesis exists but dangers can't
+  // be ruled out; "no_matching_guideline" otherwise (no treatable to route to).
   if (decision.action === "abstain") {
-    return NextResponse.json(noGuidelineResponse());
+    return NextResponse.json(abstainResponseFor(differential, map));
   }
 
   // "plan" → SHORT-CIRCUIT, NO model call. The case already collapses to a single
@@ -427,11 +497,10 @@ function handleAnswer(
   // CURRENT round. We re-derive the decision at this round to recover the target
   // + discriminators deterministically (the client does NOT send them back — it
   // only renders; the server is the single decider, so it re-derives them).
-  const priorDecision = decideCollapse(
-    caseState.differential,
-    map,
-    caseState.round,
-  );
+  // Mirror handleDecide: demote shared findings BEFORE the re-derive so the
+  // prior decision matches what decideCollapse returned in the decide phase.
+  const priorDifferential = demoteSharedFindings(caseState.differential, map);
+  const priorDecision = decideCollapse(priorDifferential, map, caseState.round);
 
   // Defense-in-depth: the answer phase is only meaningful after an "ask". If the
   // prior decision was NOT an ask (e.g. a client posted an answer out of order),
@@ -448,8 +517,10 @@ function handleAnswer(
   const present = presentFromAnswer(answer);
 
   // EXECUTION: the deterministic evidence flip (the model does NOT re-rank).
+  // Apply to the DEMOTED differential so the post-answer state stays consistent
+  // with the pre-answer view (no surprise re-introduction of shared findings).
   const updatedDifferential = applyAnswer(
-    caseState.differential,
+    priorDifferential,
     target,
     discriminators,
     present,
@@ -503,5 +574,8 @@ function handleAnswer(
     return NextResponse.json(ok);
   }
 
-  return NextResponse.json(noGuidelineResponse());
+  // Post-answer abstain: pick the right copy based on the UPDATED differential.
+  // If unresolved dangers still exist after the clinician's answer, say so —
+  // do not mislead with "no matching guideline" when guidelines exist.
+  return NextResponse.json(abstainResponseFor(updatedDifferential, map));
 }
