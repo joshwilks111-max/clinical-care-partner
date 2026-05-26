@@ -20,7 +20,8 @@ export type WeightFacts = { weight_kg?: number | null };
 export type RefusalReasonPreLLM =
   | "weight_missing"
   | "no_matching_guideline"
-  | "wrong_guideline";
+  | "wrong_guideline"
+  | "unresolved_dangers";
 
 export type RefusalDecision = {
   /** True iff the system must abstain before any model call. */
@@ -42,6 +43,11 @@ const NO_GUIDELINE_COPY =
 const WRONG_GUIDELINE_COPY =
   "The selected guideline is for a different condition than the one confirmed, " +
   "so I won't apply it. Re-select the guideline that matches the confirmed condition.";
+
+const UNRESOLVED_DANGERS_COPY =
+  "Multiple dangerous conditions remain on the differential and cannot be ruled out " +
+  "from this note alone. I won't dose past them — escalate for a clinician to examine " +
+  "the patient and rule out the must-not-miss diagnoses, then re-run with a narrowed note.";
 
 /**
  * Pre-LLM weight gate. Returns refuse:true with NO side effects when weight is
@@ -87,5 +93,22 @@ export function wrongGuidelineAbstention(): RefusalDecision {
     refuse: true,
     reason: "wrong_guideline",
     copy: WRONG_GUIDELINE_COPY,
+  };
+}
+
+/**
+ * Multiple-unresolved-dangers abstention. Fires when turn 1.5's collapse decider
+ * returns "abstain" because the differential carries either (a) more than one
+ * unresolved must-not-miss the loop cannot ask about in a single round, or
+ * (b) any confirmed (positive) must-not-miss after the shared-finding demote.
+ * Distinct copy from no_matching_guideline: a guideline DOES exist for the
+ * treatable, but the data does not let us safely route past the dangers.
+ * Pure + deterministic.
+ */
+export function unresolvedDangersAbstention(): RefusalDecision {
+  return {
+    refuse: true,
+    reason: "unresolved_dangers",
+    copy: UNRESOLVED_DANGERS_COPY,
   };
 }
