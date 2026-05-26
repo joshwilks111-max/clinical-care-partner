@@ -295,6 +295,11 @@ export async function POST(req: Request): Promise<Response> {
   // guideline is for a different condition than the one confirmed) ABSTAINS —
   // fail closed rather than apply a guideline for the wrong condition. Because
   // routedId is no longer derived from `condition`, this check can actually fail.
+  //
+  // Cross-reference: when STEP 1.5 above is bypassed because
+  // selected_guideline_id is set, this audit is the load-bearing defense
+  // against a malicious POST that pairs a real guideline id with a different
+  // confirmed condition. wrong_guideline abstention fires there, not here.
   // ===================================================================
   const condition = caseState.selected_condition ?? "";
   const profession = facts.profession ?? "ED clinician";
