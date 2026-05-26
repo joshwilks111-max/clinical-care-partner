@@ -326,7 +326,11 @@ export function Console() {
               <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
                 {group === "note" ? "Notes" : "Transcripts"}
               </p>
-              <div className="flex flex-wrap gap-2">
+              {/* Grid (was flex-wrap) so the 4-card notes group lays out cleanly
+                  at every breakpoint: 1-col mobile, 2x2 tablet (no orphan row),
+                  4-col desktop. Transcripts group has 2 cards so 2-col tablet
+                  also reads tidy. */}
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 {DEMO_NOTES.filter((d) => d.group === group).map((demo) => (
                   <div key={demo.id} className="flex flex-col">
                     <Button
@@ -341,7 +345,7 @@ export function Console() {
                     </Button>
                     {/* Caption carries real clinical info (case + expected dose),
                         so it must be legible: 12px + AA-contrast colour. */}
-                    <span className="mt-1 max-w-[200px] text-xs leading-tight text-foreground/70">
+                    <span className="mt-1 text-xs leading-tight text-foreground/70">
                       {demo.caption}
                     </span>
                   </div>
