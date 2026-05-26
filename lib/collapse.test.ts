@@ -14,6 +14,7 @@ import { describe, it, expect } from "vitest";
 import {
   decideCollapse,
   applyAnswer,
+  demoteSharedFindings,
   MAX_ROUNDS,
   type ConditionGuidelineMap,
 } from "./collapse";
@@ -284,5 +285,257 @@ describe("applyAnswer — deterministic evidence flip (immutable, invents nothin
       false,
     );
     expect(out.conditions[1].likelihood).toBe("possible");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// demoteSharedFindings — the Rule-2 over-abstain fix.
+//
+// The live model correctly lists shared physical findings (e.g. "stridor at
+// rest") under EVERY must-not-miss condition the finding is consistent with.
+// Rule 2 would then over-abstain on a clinically routine fact pattern.
+// demoteSharedFindings strips those shared findings from must-not-miss
+// positives IFF the same finding anchors a treatable-and-routed condition.
+// ---------------------------------------------------------------------------
+
+describe("demoteSharedFindings", () => {
+  const map: ConditionGuidelineMap = { croup: "starship-croup-2020" };
+
+  it("demotes a finding shared between a must-not-miss and the treatable", () => {
+    // "stridor at rest" appears as positive on Epiglottitis (must-not-miss) AND
+    // Croup (likely, routed). The Epiglottitis copy should be demoted to its
+    // negative arm with the shared/non-discriminating audit prefix; Croup's
+    // positive stays intact.
+    const d: Differential = {
+      conditions: [
+        {
+          name: "Epiglottitis",
+          likelihood: "must-not-miss",
+          positive_evidence: ["stridor at rest"],
+          negative_evidence: ["no drooling"],
+        },
+        {
+          name: "Croup",
+          likelihood: "likely",
+          positive_evidence: ["barky cough", "stridor at rest"],
+          negative_evidence: [],
+        },
+      ],
+      candidate_guidelines: [],
+    };
+
+    const out = demoteSharedFindings(d, map);
+    expect(out.conditions[0].positive_evidence).toEqual([]);
+    expect(out.conditions[0].negative_evidence).toContain(
+      "[shared / non-discriminating]: stridor at rest",
+    );
+    // Croup keeps its positive list intact (the treatable's case is preserved).
+    expect(out.conditions[1].positive_evidence).toEqual([
+      "barky cough",
+      "stridor at rest",
+    ]);
+  });
+
+  it("preserves a must-not-miss positive that the treatable does NOT share (discriminating evidence stays)", () => {
+    // "drooling" is on Epiglottitis only — that's discriminating, Rule 2 SHOULD
+    // still trigger on it later. demoteSharedFindings must leave it alone.
+    const d: Differential = {
+      conditions: [
+        {
+          name: "Epiglottitis",
+          likelihood: "must-not-miss",
+          positive_evidence: ["drooling"],
+          negative_evidence: [],
+        },
+        {
+          name: "Croup",
+          likelihood: "likely",
+          positive_evidence: ["barky cough"],
+          negative_evidence: [],
+        },
+      ],
+      candidate_guidelines: [],
+    };
+
+    const out = demoteSharedFindings(d, map);
+    expect(out.conditions[0].positive_evidence).toEqual(["drooling"]);
+    expect(decideCollapse(out, map, 0).action).toBe("abstain"); // Rule 2 still fires
+  });
+
+  it("no-op when there is no treatable-and-routed condition (no benign anchor)", () => {
+    // Without a treatable in the map, there's no benign explanation — leave
+    // the must-not-miss positives alone. Rule 2 will handle it.
+    const d: Differential = {
+      conditions: [
+        {
+          name: "Epiglottitis",
+          likelihood: "must-not-miss",
+          positive_evidence: ["stridor at rest"],
+          negative_evidence: [],
+        },
+        {
+          name: "Tracheomalacia",
+          likelihood: "possible",
+          positive_evidence: ["stridor at rest"],
+          negative_evidence: [],
+        },
+      ],
+      candidate_guidelines: [],
+    };
+
+    const out = demoteSharedFindings(d, map);
+    expect(out.conditions[0].positive_evidence).toEqual(["stridor at rest"]);
+  });
+
+  it("does NOT mutate the input differential (immutability)", () => {
+    const d: Differential = {
+      conditions: [
+        {
+          name: "Epiglottitis",
+          likelihood: "must-not-miss",
+          positive_evidence: ["stridor at rest"],
+          negative_evidence: [],
+        },
+        {
+          name: "Croup",
+          likelihood: "likely",
+          positive_evidence: ["stridor at rest"],
+          negative_evidence: [],
+        },
+      ],
+      candidate_guidelines: [],
+    };
+    const snapshot = JSON.stringify(d);
+    demoteSharedFindings(d, map);
+    expect(JSON.stringify(d)).toBe(snapshot);
+  });
+
+  it("end-to-end on the LIVE croup fact pattern: demote → decideCollapse no longer fires Rule 2", () => {
+    // Reconstructs the exact fact pattern from the user's screenshot (May 26):
+    // four must-not-miss conditions all citing 'stridor at rest' as positive,
+    // Croup (typed with parenthetical) as the only treatable. Before the fix,
+    // Rule 2 fires (three confirmed dangers). After demote, Rule 3 fires
+    // instead (three unresolved must-not-miss) — also abstain, but for the
+    // RIGHT semantic reason (multiple dangers we cannot rule out, not "we
+    // confirmed all three"). The honest escalation.
+    const live: Differential = {
+      conditions: [
+        {
+          name: "Foreign body aspiration",
+          likelihood: "must-not-miss",
+          positive_evidence: ["stridor at rest"],
+          negative_evidence: ["no choking documented"],
+        },
+        {
+          name: "Epiglottitis",
+          likelihood: "must-not-miss",
+          positive_evidence: ["stridor at rest"],
+          negative_evidence: ["no drooling documented"],
+        },
+        {
+          name: "Bacterial tracheitis",
+          likelihood: "must-not-miss",
+          positive_evidence: ["stridor at rest", "barky cough"],
+          negative_evidence: ["no high fever documented"],
+        },
+        {
+          name: "Croup (viral laryngotracheobronchitis)",
+          likelihood: "likely",
+          positive_evidence: ["barky cough", "stridor at rest"],
+          negative_evidence: [],
+        },
+      ],
+      candidate_guidelines: [],
+    };
+
+    // The parenthetical-stripping norm() is what makes "Croup (...)" match the
+    // registry's "croup" key — without it, Croup wouldn't even be a treatable
+    // top and the demote step would no-op.
+    const demoted = demoteSharedFindings(live, map);
+    // After demote: every must-not-miss has been stripped of "stridor at rest"
+    // (the shared finding); bacterial tracheitis also loses "barky cough".
+    expect(demoted.conditions[0].positive_evidence).toEqual([]);
+    expect(demoted.conditions[1].positive_evidence).toEqual([]);
+    expect(demoted.conditions[2].positive_evidence).toEqual([]);
+    // Croup keeps its full positive list.
+    expect(demoted.conditions[3].positive_evidence).toEqual([
+      "barky cough",
+      "stridor at rest",
+    ]);
+    // Rule 2 no longer fires (the dangerous conditions are no longer
+    // "confirmed" by a shared finding). Rule 3 fires instead (3 unresolved).
+    // Both are abstain, but for semantically different reasons.
+    const d = decideCollapse(demoted, map, 0);
+    expect(d.action).toBe("abstain"); // honest escalation, not over-abstain
+  });
+
+  it("end-to-end on a SINGLE-must-not-miss live shape: demote unlocks the ask path", () => {
+    // The clean win case: only one unresolved must-not-miss remains after the
+    // shared finding is demoted, so Rule 4 (ask) can fire. This is what the
+    // demote fix actually enables for cases with one dangerous condition
+    // sharing one finding with the treatable.
+    const live: Differential = {
+      conditions: [
+        {
+          name: "Epiglottitis",
+          likelihood: "must-not-miss",
+          positive_evidence: ["stridor at rest"],
+          negative_evidence: ["no drooling documented"],
+        },
+        {
+          name: "Croup (viral laryngotracheobronchitis)",
+          likelihood: "likely",
+          positive_evidence: ["barky cough", "stridor at rest"],
+          negative_evidence: [],
+        },
+      ],
+      candidate_guidelines: [],
+    };
+    const demoted = demoteSharedFindings(live, map);
+    const d = decideCollapse(demoted, map, 0);
+    expect(d.action).toBe("ask");
+    expect(d.target).toBe("Epiglottitis");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// norm() parenthetical strip (via decideCollapse public API).
+// ---------------------------------------------------------------------------
+
+describe("norm parenthetical strip — registry routing works on long names", () => {
+  const map: ConditionGuidelineMap = { croup: "starship-croup-2020" };
+
+  it('matches "Croup (viral laryngotracheobronchitis)" to registry key "croup"', () => {
+    const d: Differential = {
+      conditions: [
+        {
+          name: "Croup (viral laryngotracheobronchitis)",
+          likelihood: "likely",
+          positive_evidence: ["barky cough"],
+          negative_evidence: [],
+        },
+      ],
+      candidate_guidelines: [],
+    };
+    const decision = decideCollapse(d, map, 0);
+    expect(decision.action).toBe("plan");
+    expect(decision.guidelineId).toBe("starship-croup-2020");
+  });
+
+  it("leaves bare short names alone (back-compat with fixture-style names)", () => {
+    const d: Differential = {
+      conditions: [
+        {
+          name: "Croup",
+          likelihood: "likely",
+          positive_evidence: ["barky cough"],
+          negative_evidence: [],
+        },
+      ],
+      candidate_guidelines: [],
+    };
+    const decision = decideCollapse(d, map, 0);
+    expect(decision.action).toBe("plan");
+    expect(decision.guidelineId).toBe("starship-croup-2020");
   });
 });
