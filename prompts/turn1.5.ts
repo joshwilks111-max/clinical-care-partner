@@ -14,7 +14,11 @@ import {
   GUIDELINES,
   type ConditionMeta,
 } from "@/registry/guidelines";
-import { sanitizeDiscriminator, DISCRIMINATORS_OPEN, DISCRIMINATORS_CLOSE } from "@/prompts/turn1.5-sanitize";
+import {
+  sanitizeDiscriminator,
+  DISCRIMINATORS_OPEN,
+  DISCRIMINATORS_CLOSE,
+} from "@/prompts/turn1.5-sanitize";
 import { normConditionKey } from "@/lib/condition-key";
 
 export {
@@ -27,19 +31,42 @@ export {
 } from "@/prompts/turn1.5-sanitize";
 
 /** Condition display names from the differential. */
-export function differentialConditionNames(differential: Differential): string[] {
+export function differentialConditionNames(
+  differential: Differential,
+): string[] {
   return differential.conditions.map((c) => c.name);
 }
 
 /** Normalized keys for pair-check lookups. */
-export function differentialConditionKeys(differential: Differential): string[] {
+export function differentialConditionKeys(
+  differential: Differential,
+): string[] {
   return differential.conditions.map((c) => normConditionKey(c.name));
 }
 
-/** Must-not-miss condition names in the differential. */
+/**
+ * Differential conditions the clinician can be asked a discriminating question
+ * about — i.e. any condition (any likelihood band) that has registry
+ * discriminators. Asking about a condition without discriminators 400s in the
+ * answer phase (bad_discriminators); restricting the schema to discriminator-
+ * bearing conditions keeps decide+answer coherent.
+ *
+ * Originally restricted to likelihood === "must-not-miss", but the Turn 1
+ * prompt was tightened to demote secondary red flags to "possible" when one
+ * treatable clearly leads (F-016A). That left clinically-useful targets like
+ * epiglottitis stuck at "possible" — askable in the registry, but invisible
+ * to this filter. Broadening the filter to "has discriminators, regardless of
+ * band" restores the clinically-useful ask while still excluding registry-
+ * less conditions (e.g. foreign body aspiration, retropharyngeal abscess).
+ *
+ * Name is kept for diff-friendliness; semantics widened.
+ */
 export function mustNotMissTargets(differential: Differential): string[] {
   return differential.conditions
-    .filter((c) => c.likelihood === "must-not-miss")
+    .filter((c) => {
+      const meta = getConditionMeta(c.name);
+      return meta !== null && meta.discriminators.length > 0;
+    })
     .map((c) => c.name);
 }
 
@@ -62,10 +89,17 @@ export function buildTurn15OutputSchema(differential: Differential) {
 
   const treatableNames = treatableConditionNames(differential);
   const mnmNames = mustNotMissTargets(differential);
-  const mnmEnum =
-    mnmNames.length > 0
-      ? z.enum(mnmNames as [string, ...string[]])
-      : z.string().min(1);
+  // When there ARE askable must-not-miss conditions (those with registry
+  // discriminators), constrain target_condition to that enum. When there are
+  // none, leave it as a permissive string AT THE TYPE LEVEL — the API rejects
+  // a z.never() schema (it serializes to {"not":{}} with no `type`, which
+  // Anthropic's JSON-schema validator refuses). The semantic forbid happens in
+  // the superRefine below, which rejects needs_question=true whenever the
+  // askable-MNM list is empty (F-018).
+  const hasAskableMustNotMiss = mnmNames.length > 0;
+  const mnmEnum = hasAskableMustNotMiss
+    ? z.enum(mnmNames as [string, ...string[]])
+    : z.string().min(1);
 
   const treatableEnum =
     treatableNames.length > 0
@@ -86,6 +120,17 @@ export function buildTurn15OutputSchema(differential: Differential) {
     })
     .superRefine((val, ctx) => {
       if (val.needs_question) {
+        // F-018 — if no must-not-miss in the differential has registry
+        // discriminators, an ask is unanswerable (answer phase would 400 on
+        // bad_discriminators). Force the model to needs_question=false here.
+        if (!hasAskableMustNotMiss) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message:
+              "needs_question must be false when no must-not-miss has registry discriminators",
+            path: ["needs_question"],
+          });
+        }
         if (!val.target_condition) {
           ctx.addIssue({
             code: z.ZodIssueCode.custom,
@@ -144,10 +189,15 @@ export function validateTurn15Output(
     if (!diffKeys.has(targetKey)) {
       return "invented_condition";
     }
-    const targetInDiff = differential.conditions.find(
-      (c) => normConditionKey(c.name) === targetKey,
-    );
-    if (targetInDiff?.likelihood !== "must-not-miss") {
+    // F-018 — the target must be a condition with REGISTRY DISCRIMINATORS, not
+    // necessarily likelihood "must-not-miss". The Turn 1 prompt now demotes
+    // secondary red flags to "possible" when one treatable clearly leads, but
+    // those possibles (e.g. epiglottitis with registry discriminators) are
+    // still clinically-useful ask targets. Restricting to must-not-miss here
+    // would force decide to ok-out cases the Turn 1.5 model legitimately wants
+    // to clarify.
+    const targetMeta = getConditionMeta(targetKey);
+    if (!targetMeta || targetMeta.discriminators.length === 0) {
       return "invented_condition";
     }
   }
@@ -213,11 +263,17 @@ export function buildTurn15SystemPrompt(differential: Differential): string {
     "  - You NEVER prescribe or compute a dose. You only recommend a guideline id.",
     "  - recommended_condition and recommended_guideline MUST come from the enums in",
     "    the structured output schema — never invent ids or conditions.",
-    "  - target_condition (when needs_question is true) MUST be a must-not-miss",
-    "    condition from the differential — the one whose answer rules out the most danger.",
+    "  - target_condition (when needs_question is true) MUST be a condition from the",
+    "    differential that has REGISTRY DISCRIMINATORS — typically a must-not-miss,",
+    "    but the Turn 1 prompt sometimes demotes a clinically-useful red flag (e.g.",
+    "    epiglottitis) to 'possible' when one treatable clearly leads. Either band",
+    "    is fine here as long as the condition appears in the registry condition",
+    "    metadata block below with non-empty discriminators. Pick the condition",
+    "    whose answer rules out the most danger before applying the treatable.",
     "  - question must be ONE plain-text clinical question, no markdown, ending with ?.",
     "  - rationale_summary: max 200 chars, no chain-of-thought, audit-facing only.",
-    "  - If every must-not-miss is already ruled out by absent negative evidence, set",
+    "  - If no registry-discriminator-bearing condition is in the differential, OR",
+    "    every such condition is already ruled out by absent negative evidence, set",
     "    needs_question to false.",
     "",
     "REGISTRY CONDITION METADATA (authoritative):",

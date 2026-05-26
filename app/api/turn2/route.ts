@@ -47,6 +47,7 @@ import {
   getGuideline,
   getDoseRule,
   buildConditionGuidelineMap,
+  buildAskableConditionSet,
 } from "@/registry/guidelines";
 import {
   calculate_dose,
@@ -228,6 +229,13 @@ export async function POST(req: Request): Promise<Response> {
   // ===================================================================
   {
     const collapseMap = buildConditionGuidelineMap();
+    // F-018 — the askable set encodes which conditions Turn 1.5 could ask about
+    // (i.e. those with registry discriminators). The gate uses it to ignore
+    // unanswerable must-not-miss conditions as blockers — they stay in the UI
+    // for clinician awareness, but they can't be resolved by any question, so
+    // gating on them is moot (and incorrectly forces abstain on cases that
+    // should dose). See lib/collapse.ts:AskableConditionSet for the policy.
+    const askableConditions = buildAskableConditionSet();
     const differentialForGate = demoteSharedFindings(
       caseState.differential,
       collapseMap,
@@ -237,6 +245,7 @@ export async function POST(req: Request): Promise<Response> {
       differentialForGate,
       collapseMap,
       gateRound,
+      askableConditions,
     );
     if (collapseDecision.action === "abstain") {
       // F-016 — pick the copy that matches the actual blocker. Rule 2 (positive

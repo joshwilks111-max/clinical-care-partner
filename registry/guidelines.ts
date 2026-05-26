@@ -382,3 +382,18 @@ export function getConditionMeta(condition: string): ConditionMeta | null {
 export function allGuidelineIds(): string[] {
   return Object.keys(GUIDELINES);
 }
+
+/**
+ * The set of NORMALIZED condition keys that have non-empty registry
+ * discriminators — i.e. conditions the Turn 1.5 ask flow can ask a
+ * meaningful yes/no/not-assessed question about. Used by Turn 2's
+ * defense-in-depth collapse gate to decide which unresolved must-not-miss
+ * conditions actually block dosing (F-018).
+ */
+export function buildAskableConditionSet(): ReadonlySet<string> {
+  return new Set(
+    Object.entries(CONDITION_META)
+      .filter(([, meta]) => meta.discriminators.length > 0)
+      .map(([key]) => key),
+  );
+}

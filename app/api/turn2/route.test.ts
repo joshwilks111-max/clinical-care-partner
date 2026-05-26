@@ -555,7 +555,10 @@ describe("POST /api/turn2 — technical error (red) vs success vs incomplete (am
       source?: string;
     };
     expect(body.status).toBe("abstention");
-    expect(body.reason).toBe("no_matching_guideline");
+    // F-016D — Rule 2 (positive must-not-miss) abstains with reason
+    // "unresolved_dangers", NOT "no_matching_guideline". A guideline DID exist
+    // for the selected condition; the abstain was about undischarged danger.
+    expect(body.reason).toBe("unresolved_dangers");
     // NON-VACUOUS: gate fired before any model call.
     expect(generateTextCalls.length).toBe(0);
   });

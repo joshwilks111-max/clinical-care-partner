@@ -65,6 +65,24 @@ export type CollapseDecision = {
 export type ConditionGuidelineMap = Record<string, string>;
 
 /**
+ * Set of NORMALIZED condition keys the clinician can be asked a discriminating
+ * question about — i.e. conditions with non-empty registry discriminators.
+ *
+ * THE SEMANTICS (F-018): an unresolved must-not-miss whose key is NOT in this
+ * set is unanswerable — no discriminator exists to flip — so it cannot be
+ * used to gate dosing. It still appears in the differential UI for clinician
+ * awareness, but Rule 3a/4/6 ignore it as a blocker. This is a softening of
+ * the original "any unresolved must-not-miss blocks" posture, traded off
+ * deliberately so that the live LLM's broader-than-fixture differentials can
+ * still produce doses on canonical cases (see TODOS.md). Pass an EMPTY set
+ * to preserve the legacy posture.
+ *
+ * The caller (Turn 2 route) builds this from CONDITION_META; the decider
+ * stays pure (no registry import).
+ */
+export type AskableConditionSet = ReadonlySet<string>;
+
+/**
  * One clarifying round only. decideCollapse may ask at most once; once round
  * reaches MAX_ROUNDS, an unresolved must-not-miss can no longer be asked about
  * and the decision falls to abstain (fail toward stopping).
@@ -135,24 +153,69 @@ function isTreatableTop(
 // PURE + IMMUTABLE: returns a NEW Differential; never mutates the input.
 // ---------------------------------------------------------------------------
 
+/**
+ * Normalize a finding-string for cross-condition matching: lowercase, collapse
+ * whitespace, strip trailing parenthetical and surrounding punctuation. The
+ * LLM phrases the same underlying clinical fact differently across conditions
+ * (e.g. "stridor at rest" on the treatable Croup vs "stridor at rest in a
+ * toddler" on the must-not-miss Foreign body aspiration). Exact set-membership
+ * misses these; normalized substring containment catches them. The brittleness
+ * was discovered live during F-018 QA (see TODOS.md "softened safety posture").
+ */
+function normFinding(s: string): string {
+  return s
+    .toLowerCase()
+    .trim()
+    .replace(/\s*\([^)]*\)\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * True iff the must-not-miss finding shares its clinical content with at least
+ * one benign-anchor finding from a treatable condition. Match is normalized
+ * substring containment in either direction — "stridor at rest" inside
+ * "stridor at rest in a toddler" matches, but "rash" inside "purpuric rash"
+ * also matches (intentional: same finding, qualified). The benign-anchor
+ * filter (only treatable conditions contribute) prevents must-not-miss-only
+ * symptoms from accidentally demoting each other.
+ */
+function findingShared(mnmFinding: string, benignAnchors: string[]): boolean {
+  const mnmKey = normFinding(mnmFinding);
+  if (mnmKey.length === 0) return false;
+  return benignAnchors.some((anchor) => {
+    const anchorKey = normFinding(anchor);
+    if (anchorKey.length === 0) return false;
+    return mnmKey.includes(anchorKey) || anchorKey.includes(mnmKey);
+  });
+}
+
 export function demoteSharedFindings(
   d: Differential,
   map: ConditionGuidelineMap,
 ): Differential {
-  // Build the set of findings that are positive on at least one TREATABLE-AND-
-  // ROUTED condition (i.e. a likely/possible whose normalized name is a key in
-  // the map). These are the findings with a benign anchor — the ones we can
-  // safely demote from must-not-miss positives without losing information.
-  const benignAnchors = new Set<string>();
+  // Collect every finding that is positive on at least one TREATABLE-AND-ROUTED
+  // condition. These are the benign-anchor findings — ones a treatable
+  // hypothesis already explains. A must-not-miss positive that shares clinical
+  // content with one of these isn't a confirmation; it's a non-discriminating
+  // co-mention. NB: deduplicated by exact value (preserve qualifier text for
+  // the audit trail) — substring matching happens in findingShared.
+  const benignAnchors: string[] = [];
+  const seenAnchors = new Set<string>();
   for (const c of d.conditions) {
     if (isTreatableTop(c, map)) {
-      for (const f of c.positive_evidence) benignAnchors.add(f);
+      for (const f of c.positive_evidence) {
+        if (!seenAnchors.has(f)) {
+          seenAnchors.add(f);
+          benignAnchors.push(f);
+        }
+      }
     }
   }
 
-  // If there's no treatable anchor at all, there's nothing to demote against —
-  // leave the differential untouched (Rule 2 will handle it correctly).
-  if (benignAnchors.size === 0) {
+  // No treatable anchor → no benign explanation to demote against. Leave
+  // untouched (Rule 2 handles "multiple dangers, no treatable" correctly).
+  if (benignAnchors.length === 0) {
     return {
       conditions: [...d.conditions],
       candidate_guidelines: d.candidate_guidelines,
@@ -161,14 +224,19 @@ export function demoteSharedFindings(
 
   const conditions = d.conditions.map((c) => {
     if (c.likelihood !== "must-not-miss") return c;
-    const shared = c.positive_evidence.filter((f) => benignAnchors.has(f));
+    const shared = c.positive_evidence.filter((f) =>
+      findingShared(f, benignAnchors),
+    );
     if (shared.length === 0) return c;
     // Move shared findings from positive_evidence INTO negative_evidence with a
     // "shared / non-discriminating" prefix so the audit trail records WHY they
     // moved — the UI / future review can read the differential and see the
     // demotion was intentional, not a data loss.
+    // Re-use the same fuzzy-match predicate so positives and the audit log
+    // stay in lockstep — no off-by-one where shared lists a finding but
+    // newPositive still contains it (exact-match would do that).
     const newPositive = c.positive_evidence.filter(
-      (f) => !benignAnchors.has(f),
+      (f) => !findingShared(f, benignAnchors),
     );
     const newNegative = [
       ...c.negative_evidence,
@@ -208,6 +276,15 @@ export function decideCollapse(
   d: Differential,
   map: ConditionGuidelineMap,
   round: number,
+  /**
+   * Optional. When ABSENT (the legacy semantic), every unresolved must-not-miss
+   * is treated as askable — preserves pre-F-018 callers and the test fixtures
+   * built before the registry-discriminator filter existed. When PROVIDED, only
+   * unresolved must-not-miss conditions whose normalized name is in the set
+   * count as blockers. Production callers (Turn 2 route) pass a real set built
+   * from CONDITION_META so unanswerable must-not-miss conditions don't gate.
+   */
+  askable?: AskableConditionSet,
 ): CollapseDecision {
   // Rule 1: nothing to reason over → stop. No treatable could exist.
   if (d.conditions.length === 0) {
@@ -222,8 +299,27 @@ export function decideCollapse(
     return { action: "abstain", reason: "unresolved_dangers" };
   }
 
-  const unresolvedMustNotMiss = d.conditions.filter(isUnresolvedMustNotMiss);
-  const treatableTops = d.conditions.filter((c) => isTreatableTop(c, map));
+  // F-018 softening: an unresolved must-not-miss whose discriminators are NOT
+  // in the registry is UNANSWERABLE — there's no question we can ask to flip
+  // it. Treating it as a blocker forces an abstain on cases that have one
+  // strong treatable plus a clinically-warranted but unaskable red flag (e.g.
+  // foreign body aspiration with no registered discriminators). The clinician
+  // still sees it in the differential. The askable set carries the policy.
+  // When askable is undefined (legacy callers / fixture tests pre-F-018),
+  // every unresolved must-not-miss is treated as askable — preserves prior
+  // behaviour. When provided, only set members count as blockers.
+  const isAskableUnresolvedMustNotMiss = (
+    c: DifferentialCondition,
+  ): boolean => {
+    if (!isUnresolvedMustNotMiss(c)) return false;
+    if (askable === undefined) return true;
+    return askable.has(norm(c.name));
+  };
+
+  const unresolvedMustNotMiss = d.conditions.filter(
+    isAskableUnresolvedMustNotMiss,
+  );
+  let treatableTops = d.conditions.filter((c) => isTreatableTop(c, map));
 
   // Rule 3a: more than one unresolved must-not-miss → genuinely ambiguous on
   // the safety axis (we can only ask once). The treatable may still exist; the
@@ -232,10 +328,25 @@ export function decideCollapse(
     return { action: "abstain", reason: "unresolved_dangers" };
   }
   // Rule 3b: more than one treatable top mapping to a guideline → the registry
-  // alone cannot disambiguate which to apply. Reason is "no_treatable" in the
-  // sense of "no SINGLE treatable" — the copy fits ("confirm the condition").
+  // alone cannot disambiguate which to apply, UNLESS the likelihood bands
+  // already rank them. The Turn 1 prompt now demotes secondary differentials
+  // to "possible" when one treatable clearly leads (F-016A), so a single
+  // "likely" alongside multiple "possible" treatables is the COMMON live shape
+  // for a leading diagnosis with co-considered alternatives. Treat that as
+  // unambiguous: the "likely" wins, the "possible" alternatives stay in the
+  // differential UI for clinician awareness but don't block dosing.
+  // Genuine ties (more than one "likely" treatable, or all-"possible" with
+  // no clear leader) still abstain.
   if (treatableTops.length > 1) {
-    return { action: "abstain", reason: "no_treatable" };
+    const likelyTreatables = treatableTops.filter(
+      (c) => c.likelihood === "likely",
+    );
+    if (likelyTreatables.length !== 1) {
+      return { action: "abstain", reason: "no_treatable" };
+    }
+    // Exactly one "likely" treatable + ≥1 "possible" treatables — keep only
+    // the leading one as the treatable for downstream Rule 4/5 evaluation.
+    treatableTops = [likelyTreatables[0]];
   }
 
   // Rule 4: ask iff exactly one unresolved must-not-miss AND exactly one
