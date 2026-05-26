@@ -19,7 +19,11 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 import { Console } from "./console";
-import { SafetyCheckCard } from "./safety-check-card";
+import {
+  SafetyCheckCard,
+  Turn15Abstention,
+  MustNotMissClearedBanner,
+} from "./safety-check-card";
 import { FIXTURE_TURN1_SUCCESS } from "./fixtures";
 import type { Turn15Response } from "@/app/api/turn1.5/route";
 
@@ -262,5 +266,132 @@ describe("Console fail-closed — turn1.5 PLAN ok → dose buttons DO render (th
     await waitFor(() => expect(guidelineButton()).toBeInTheDocument());
     expect(screen.getByTestId("your-turn")).toBeInTheDocument();
     // No model call was needed for the plan short-circuit (decide returned ok).
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE HONESTY INVARIANT (Fix 1) — the urgent abstention + cleared copy is
+// DATA-DRIVEN from the condition the SERVER identified, never hardcoded. Tested
+// directly on the extracted components (Fix 2) so the templating + the null-
+// target server-copy fallback are pinned in isolation; console.test.tsx exercises
+// the same property end-to-end through the fetch flow.
+// ---------------------------------------------------------------------------
+
+describe("Turn15Abstention — data-driven urgent copy (honesty invariant)", () => {
+  it("names the identified target + discriminators when a target is present", () => {
+    render(
+      <Turn15Abstention
+        target="Epiglottitis"
+        discriminators={["drooling", "tripod posture", "muffled voice"]}
+        serverHeadline="(server fallback headline)"
+        serverDetail="(server fallback detail)"
+      />,
+    );
+    expect(screen.getByTestId("turn15-abstention-alert")).toHaveTextContent(
+      "ESCALATE · SUSPECTED EPIGLOTTITIS",
+    );
+    const block = screen.getByTestId("turn15-abstention");
+    expect(block).toHaveTextContent(
+      /Possible epiglottitis: do not apply the selected dosing guideline/i,
+    );
+    expect(block).toHaveTextContent(
+      /drooling \/ tripod posture \/ muffled voice/,
+    );
+    // With a real target, the server fallbacks must NOT appear.
+    expect(block).not.toHaveTextContent(/server fallback/);
+  });
+
+  it("follows a DIFFERENT target (bacterial tracheitis), NOT a hardcoded epiglottitis — the data-driven proof", () => {
+    // THE PROOF: a hardcoded "epiglottitis" would fail the negative assertion.
+    render(
+      <Turn15Abstention
+        target="Bacterial tracheitis"
+        discriminators={["high fever", "toxic appearance"]}
+        serverHeadline="(unused)"
+      />,
+    );
+    expect(screen.getByTestId("turn15-abstention-alert")).toHaveTextContent(
+      "ESCALATE · SUSPECTED BACTERIAL TRACHEITIS",
+    );
+    const block = screen.getByTestId("turn15-abstention");
+    expect(block).toHaveTextContent(/Possible bacterial tracheitis/i);
+    expect(block).toHaveTextContent(/high fever \/ toxic appearance/);
+    expect(block).not.toHaveTextContent(/epiglottitis/i);
+  });
+
+  it("uses a generic rationale when discriminators are empty (still no hardcode)", () => {
+    render(
+      <Turn15Abstention
+        target="Foreign body aspiration"
+        discriminators={[]}
+        serverHeadline="(unused)"
+      />,
+    );
+    expect(screen.getByTestId("turn15-abstention")).toHaveTextContent(
+      /A must-not-miss condition could not be ruled out\. Escalate for urgent assessment\./,
+    );
+  });
+
+  it("falls back to the SERVER headline/detail when target is null (never invents a condition)", () => {
+    render(
+      <Turn15Abstention
+        target={null}
+        discriminators={[]}
+        serverHeadline="No local guideline matches this condition."
+        serverDetail="Only croup and anaphylaxis are in the registry."
+      />,
+    );
+    const block = screen.getByTestId("turn15-abstention");
+    expect(block).toHaveTextContent(
+      /No local guideline matches this condition/,
+    );
+    expect(block).toHaveTextContent(
+      /Only croup and anaphylaxis are in the registry/,
+    );
+    // No fabricated "SUSPECTED <X>" claim in the eyebrow.
+    expect(screen.getByTestId("turn15-abstention-alert")).not.toHaveTextContent(
+      /SUSPECTED/,
+    );
+  });
+
+  it("omits the detail line when target is null and server detail is absent", () => {
+    render(
+      <Turn15Abstention
+        target={null}
+        discriminators={[]}
+        serverHeadline="Headline only."
+        serverDetail={null}
+      />,
+    );
+    expect(screen.getByTestId("turn15-abstention")).toHaveTextContent(
+      "Headline only.",
+    );
+    // The muted detail <p> is not rendered when there is no detail to show.
+    expect(
+      screen.getByTestId("turn15-abstention").querySelector("p"),
+    ).toBeNull();
+  });
+});
+
+describe("MustNotMissClearedBanner — data-driven cleared copy", () => {
+  it("templates the ruled-out condition name from the target", () => {
+    render(<MustNotMissClearedBanner target="Epiglottitis" />);
+    expect(screen.getByTestId("turn15-cleared")).toHaveTextContent(
+      /Epiglottitis ruled out ✓ — proceeding to apply the selected guideline/,
+    );
+  });
+
+  it("follows a different target, not a hardcoded epiglottitis", () => {
+    render(<MustNotMissClearedBanner target="Bacterial tracheitis" />);
+    const banner = screen.getByTestId("turn15-cleared");
+    expect(banner).toHaveTextContent(/Bacterial tracheitis ruled out/);
+    expect(banner).not.toHaveTextContent(/epiglottitis/i);
+  });
+
+  it("uses a generic phrasing when target is null (no hardcoded condition)", () => {
+    render(<MustNotMissClearedBanner target={null} />);
+    expect(screen.getByTestId("turn15-cleared")).toHaveTextContent(
+      /Must-not-miss condition ruled out ✓/,
+    );
   });
 });

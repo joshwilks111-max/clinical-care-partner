@@ -36,7 +36,7 @@
 
 import { useState } from "react";
 
-import { ShieldAlert, OctagonX, CheckCircle2 } from "lucide-react";
+import { ShieldAlert, OctagonX } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -44,7 +44,11 @@ import { Textarea } from "@/components/ui/textarea";
 
 import { CasePanel } from "./case-panel";
 import { Turn1View, Turn1DecisionGate } from "./turn1-view";
-import { SafetyCheckCard } from "./safety-check-card";
+import {
+  SafetyCheckCard,
+  Turn15Abstention,
+  MustNotMissClearedBanner,
+} from "./safety-check-card";
 import { Turn2View } from "./turn2-view";
 import { PhaseLoader, type Phase } from "./phase-loader";
 import { DEMO_NOTES, type Turn1Response, type Turn1Success } from "./fixtures";
@@ -69,6 +73,16 @@ export function Console() {
   // The turn-1.5 collapse decider's result. THE FAIL-CLOSED SIGNAL: the dose-
   // enabling guideline buttons render iff this is status:"ok" (see gateOpen).
   const [turn15, setTurn15] = useState<Turn15Response | null>(null);
+  // The target + discriminators the SERVER identified in the preceding `ask`.
+  // The abstention + cleared responses DROP these (they carry only reason/
+  // headline/detail), so we RETAIN them here to data-drive the urgent abstention
+  // and cleared copy — the UI must never name a condition the server didn't.
+  // Same staleness discipline as turn15: reset everywhere turn15 resets, so a
+  // prior case's target can never leak into a later case's display copy.
+  const [lastAsk, setLastAsk] = useState<{
+    target: string;
+    discriminators: string[];
+  } | null>(null);
   const [turn2, setTurn2] = useState<Turn2Response | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
 
@@ -94,6 +108,7 @@ export function Console() {
     setNote(note); // left panel shows what was submitted (draft-until-Run).
     setTurn1(null);
     setTurn15(null);
+    setLastAsk(null); // clear the retained ask target — no cross-case leakage.
     setTurn2(null);
     setWeightConfirmed(false);
     setBusy({ kind: "turn1" });
@@ -136,6 +151,7 @@ export function Console() {
   async function runTurn15Decide() {
     if (!turn1Ok) return;
     setTurn15(null);
+    setLastAsk(null); // a fresh decide starts with no retained ask (anti-leak).
     setTurn2(null);
     setBusy({ kind: "turn15", phase: "checking-safety" });
     try {
@@ -146,6 +162,15 @@ export function Console() {
       });
       const data = (await res.json()) as Turn15Response;
       setTurn15(data);
+      // RETAIN the server-identified target + discriminators ONLY on an ask. The
+      // later abstention/cleared responses drop them, so this is the single place
+      // they enter state. This is what data-drives the urgent abstention copy.
+      if (data.status === "ask") {
+        setLastAsk({
+          target: data.target,
+          discriminators: data.discriminators,
+        });
+      }
     } catch (e) {
       // FAIL CLOSED: a thrown fetch / parse failure becomes a turn-1.5 error —
       // gateOpen stays false, so the dose-enabling buttons are NEVER shown.
@@ -433,29 +458,18 @@ export function Console() {
           )}
 
           {/* Turn-1.5 amber abstention — e.g. SUSPECTED EPIGLOTTITIS. The machine
-              reason stays no_matching_guideline; the DISPLAY copy carries the
-              urgency (urgent eyebrow + escalate headline/detail), client-side.
-              The dose buttons are NOT rendered here (gateOpen is false). */}
+              reason stays no_matching_guideline; the DISPLAY copy is DATA-DRIVEN
+              from the condition the SERVER identified in the prior ask (lastAsk),
+              never hardcoded — the honesty invariant. When there was no prior ask
+              the component falls back to the SERVER's own headline/detail. The
+              dose buttons are NOT rendered here (gateOpen is false). */}
           {turn15?.status === "abstention" && (
-            <section data-testid="turn15-abstention" className="space-y-2">
-              <Alert variant="safety" data-testid="turn15-abstention-alert">
-                <ShieldAlert />
-                <AlertTitle className="flex items-center gap-2">
-                  <span className="font-mono text-[10px] tracking-wide">
-                    ESCALATE · SUSPECTED EPIGLOTTITIS
-                  </span>
-                </AlertTitle>
-                <AlertDescription className="text-[13px] font-semibold text-safety-foreground">
-                  Possible epiglottitis: do not apply the croup dosing
-                  guideline.
-                </AlertDescription>
-              </Alert>
-              <p className="text-[12px] text-muted-foreground">
-                Drooling / tripod posture / muffled voice suggests a
-                must-not-miss airway condition. Escalate for urgent airway
-                assessment.
-              </p>
-            </section>
+            <Turn15Abstention
+              target={lastAsk?.target ?? null}
+              discriminators={lastAsk?.discriminators ?? []}
+              serverHeadline={turn15.headline}
+              serverDetail={turn15.detail}
+            />
           )}
 
           {/* Turn-1.5 RED technical error (FAIL CLOSED). A silent turn-1.5 failure
@@ -476,21 +490,9 @@ export function Console() {
             <>
               {turn15?.status === "ok" &&
                 turn15.provenance.phase === "answer" && (
-                  <Alert
-                    data-testid="turn15-cleared"
-                    className="border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-100"
-                  >
-                    <CheckCircle2 className="text-emerald-600" />
-                    <AlertTitle className="flex items-center gap-2">
-                      <span className="font-mono text-[10px] tracking-wide">
-                        MUST-NOT-MISS CLEARED
-                      </span>
-                    </AlertTitle>
-                    <AlertDescription className="text-emerald-800 dark:text-emerald-200">
-                      Epiglottitis ruled out ✓ — proceeding to apply the croup
-                      guideline.
-                    </AlertDescription>
-                  </Alert>
+                  // Cleared banner — the ruled-out condition NAME is templated
+                  // from the prior ask's target (lastAsk), not hardcoded.
+                  <MustNotMissClearedBanner target={lastAsk?.target ?? null} />
                 )}
               <Turn1DecisionGate
                 turn1={turn1Ok}
