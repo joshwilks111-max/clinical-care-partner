@@ -27,6 +27,21 @@ import { normConditionKey } from "@/lib/condition-key";
 
 export type CollapseAction = "ask" | "plan" | "abstain";
 
+/**
+ * Why the decider abstained (only set when action === "abstain"). The caller
+ * (Turn 2's gate) maps this to a distinct refusal copy:
+ *
+ *   "unresolved_dangers"  — Rule 2 (positive must-not-miss) or Rule 3
+ *                           (>1 unresolved must-not-miss) fired. A treatable
+ *                           guideline may exist; we just won't dose past the
+ *                           undischarged danger(s). Maps to
+ *                           `unresolvedDangersAbstention()`.
+ *   "no_treatable"        — Rule 1 (empty differential), Rule 3 (>1 treatable
+ *                           tie), or Rule 6 (no treatable maps to a guideline).
+ *                           Maps to `noGuidelineAbstention()`.
+ */
+export type CollapseAbstainReason = "unresolved_dangers" | "no_treatable";
+
 export type CollapseDecision = {
   action: CollapseAction;
   /** The must-not-miss condition NAME to ask about (only when action === "ask"). */
@@ -35,6 +50,8 @@ export type CollapseDecision = {
   discriminators?: string[];
   /** The candidate guideline to dose against (only when action === "plan"). */
   guidelineId?: string;
+  /** Why we abstained (only set when action === "abstain") — drives copy choice. */
+  reason?: CollapseAbstainReason;
 };
 
 /**
@@ -192,27 +209,33 @@ export function decideCollapse(
   map: ConditionGuidelineMap,
   round: number,
 ): CollapseDecision {
-  // Rule 1: nothing to reason over → stop.
+  // Rule 1: nothing to reason over → stop. No treatable could exist.
   if (d.conditions.length === 0) {
-    return { action: "abstain" };
+    return { action: "abstain", reason: "no_treatable" };
   }
 
   // Rule 2 (safety-critical, checked EARLY): a must-not-miss with ANY positive
   // evidence is confirmed-enough to be terminal. NEVER plan or ask past it.
+  // A guideline may exist for the treatable — the abstain is about the danger,
+  // not the registry — so reason = unresolved_dangers.
   if (d.conditions.some(isPositiveMustNotMiss)) {
-    return { action: "abstain" };
+    return { action: "abstain", reason: "unresolved_dangers" };
   }
 
   const unresolvedMustNotMiss = d.conditions.filter(isUnresolvedMustNotMiss);
   const treatableTops = d.conditions.filter((c) => isTreatableTop(c, map));
 
-  // Rule 3: deterministic, order-independent tie-breaks → abstain (never pick
-  // an arbitrary target or auto-dose a drug the data cannot disambiguate).
+  // Rule 3a: more than one unresolved must-not-miss → genuinely ambiguous on
+  // the safety axis (we can only ask once). The treatable may still exist; the
+  // abstain is about not dosing past undischarged dangers.
   if (unresolvedMustNotMiss.length > 1) {
-    return { action: "abstain" };
+    return { action: "abstain", reason: "unresolved_dangers" };
   }
+  // Rule 3b: more than one treatable top mapping to a guideline → the registry
+  // alone cannot disambiguate which to apply. Reason is "no_treatable" in the
+  // sense of "no SINGLE treatable" — the copy fits ("confirm the condition").
   if (treatableTops.length > 1) {
-    return { action: "abstain" };
+    return { action: "abstain", reason: "no_treatable" };
   }
 
   // Rule 4: ask iff exactly one unresolved must-not-miss AND exactly one
@@ -238,8 +261,11 @@ export function decideCollapse(
 
   // Rule 6: everything else — no treatable top maps to a guideline, OR an
   // unresolved must-not-miss survives at/after MAX_ROUNDS, OR any residual
-  // ambiguity. Fail toward stopping.
-  return { action: "abstain" };
+  // ambiguity. Fail toward stopping. Reason is "unresolved_dangers" when an
+  // unresolved must-not-miss is the blocker; "no_treatable" otherwise.
+  const reason: CollapseAbstainReason =
+    unresolvedMustNotMiss.length > 0 ? "unresolved_dangers" : "no_treatable";
+  return { action: "abstain", reason };
 }
 
 // ---------------------------------------------------------------------------

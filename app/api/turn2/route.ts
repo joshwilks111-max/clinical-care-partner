@@ -38,7 +38,11 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateText, Output, stepCountIs } from "ai";
 
 import { route, auditRoutedGuideline } from "@/lib/router";
-import { decideCollapse, demoteSharedFindings } from "@/lib/collapse";
+import {
+  decideCollapse,
+  demoteSharedFindings,
+  type CollapseAbstainReason,
+} from "@/lib/collapse";
 import {
   getGuideline,
   getDoseRule,
@@ -52,6 +56,7 @@ import {
 import { checkCompleteness, type SlotRecord } from "@/lib/completeness";
 import {
   noGuidelineAbstention,
+  unresolvedDangersAbstention,
   wrongGuidelineAbstention,
 } from "@/lib/refusal-gate";
 import { withTransientRetry } from "@/lib/retry";
@@ -234,11 +239,21 @@ export async function POST(req: Request): Promise<Response> {
       gateRound,
     );
     if (collapseDecision.action === "abstain") {
+      // F-016 — pick the copy that matches the actual blocker. Rule 2 (positive
+      // must-not-miss) and Rule 3a (>1 unresolved must-not-miss) are about
+      // undischarged danger, NOT a registry miss; using the "no guideline"
+      // copy lied to the clinician. The decider tells us which it was.
+      const abstainReason: CollapseAbstainReason =
+        collapseDecision.reason ?? "no_treatable";
+      const refusal =
+        abstainReason === "unresolved_dangers"
+          ? unresolvedDangersAbstention()
+          : noGuidelineAbstention();
       console.log(
-        `[turn2:gate] defense-in-depth collapse gate fired: action=abstain, round=${gateRound} — returning abstention, ZERO model calls`,
+        `[turn2:gate] defense-in-depth collapse gate fired: action=abstain, reason=${abstainReason}, round=${gateRound} — returning abstention, ZERO model calls`,
       );
       return NextResponse.json(
-        toAbstentionResponse(fromRefusalDecision(noGuidelineAbstention())),
+        toAbstentionResponse(fromRefusalDecision(refusal)),
       );
     }
   }
