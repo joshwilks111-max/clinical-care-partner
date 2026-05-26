@@ -147,8 +147,8 @@ branch (~53k tokens, ~2m41s, run id `eval-VZm-2026-05-26`). It reports **named c
 aggregate %** — each assertion is its own metric (`case1.dose_mg_2.13`, `case4.capped_true`,
 `case4.binding_limit_12`, `case1.severity_row_moderate`, …), so a silent severity flip or a dropped
 slot fails a *named* check. (A captured run is committed at
-**[`tests/evals/sample-output.txt`](tests/evals/sample-output.txt)**; that artifact still shows the
-earlier 8-case run and is a separate regen follow-up — see `TODOS.md`.)
+**[`tests/evals/sample-output.txt`](tests/evals/sample-output.txt)**; the artifact reflects the
+current 10-case green run.)
 
 Two layers:
 
