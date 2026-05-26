@@ -304,7 +304,9 @@ export function Console() {
           H
         </div>
         <div>
-          <h1 className="text-lg font-semibold">Care Partner Console</h1>
+          <h1 className="text-xl font-semibold tracking-tight">
+            Care Partner Console
+          </h1>
           <p className="text-sm text-muted-foreground">
             Clinical decision support · judgment up, execution down
           </p>
