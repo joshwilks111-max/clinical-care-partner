@@ -34,7 +34,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { ShieldAlert, OctagonX } from "lucide-react";
 
@@ -88,6 +88,27 @@ export function Console() {
   const [busy, setBusy] = useState<Busy>(null);
 
   const turn1Ok: Turn1Success | null = turn1?.status === "ok" ? turn1 : null;
+
+  // FINDING-002/003 — scroll the active post-Turn1 terminal state into view when
+  // it appears. Without this, the abstention card, safety-check card, or Turn 2
+  // result lands at the bottom of a long differential — the most important state
+  // change is below the fold. The effect's deps are the STATUS DISCRIMINATORS
+  // (string codes), not the response objects, so it fires once per transition
+  // and stays quiet on no-op re-renders. The wrapping div around the post-Turn1
+  // states carries the ref. Respects prefers-reduced-motion implicitly: smooth
+  // becomes instant per browser convention when the user has reduced motion on.
+  const activeStateRef = useRef<HTMLDivElement | null>(null);
+  const turn15Code = turn15?.status ?? null;
+  const turn2Code = turn2?.status ?? null;
+  useEffect(() => {
+    if (turn15Code === null && turn2Code === null) return; // empty differential view, no jump
+    const el = activeStateRef.current;
+    // Guard for jsdom (no scrollIntoView) and any environment where the API is
+    // missing — never throw from a UX nicety.
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [turn15Code, turn2Code]);
 
   // THE FAIL-CLOSED GATE — the single source of the dose-enabling decision.
   // The guideline buttons (Turn1DecisionGate) render IFF this is true: i.e. ONLY
@@ -456,73 +477,82 @@ export function Console() {
               only) → Turn 2. */}
           {turn1Ok && <Turn1View turn1={turn1Ok} />}
 
-          {/* Turn-1.5 phase label while the collapse decider runs (decide OR
+          {/* Active post-Turn1 region — anchor for the scroll-into-view effect
+              so the user is taken to the new state (safety-check / abstention /
+              error / dose / completeness) instead of being left staring at the
+              old differential. Wraps the entire after-Turn1 stack so the anchor
+              stays valid as states swap. */}
+          <div ref={activeStateRef} className="space-y-4">
+            {/* Turn-1.5 phase label while the collapse decider runs (decide OR
               answer). The only phase that may call the model is "ask". */}
-          {busy?.kind === "turn15" && <PhaseLoader phase={busy.phase} />}
+            {busy?.kind === "turn15" && <PhaseLoader phase={busy.phase} />}
 
-          {/* Turn-1.5 "ask" — the SAFETY-CHECK card interrupts BETWEEN the
+            {/* Turn-1.5 "ask" — the SAFETY-CHECK card interrupts BETWEEN the
               differential and the guideline buttons. While it is on screen the
               dose-enabling buttons are NOT rendered (gateOpen is false). */}
-          {turn15?.status === "ask" && (
-            <SafetyCheckCard
-              target={turn15.target}
-              question={turn15.question}
-              onAnswer={runTurn15Answer}
-              busy={busy !== null}
-            />
-          )}
+            {turn15?.status === "ask" && (
+              <SafetyCheckCard
+                target={turn15.target}
+                question={turn15.question}
+                onAnswer={runTurn15Answer}
+                busy={busy !== null}
+              />
+            )}
 
-          {/* Turn-1.5 amber abstention — e.g. SUSPECTED EPIGLOTTITIS. The machine
+            {/* Turn-1.5 amber abstention — e.g. SUSPECTED EPIGLOTTITIS. The machine
               reason stays no_matching_guideline; the DISPLAY copy is DATA-DRIVEN
               from the condition the SERVER identified in the prior ask (lastAsk),
               never hardcoded — the honesty invariant. When there was no prior ask
               the component falls back to the SERVER's own headline/detail. The
               dose buttons are NOT rendered here (gateOpen is false). */}
-          {turn15?.status === "abstention" && (
-            <Turn15Abstention
-              target={lastAsk?.target ?? null}
-              discriminators={lastAsk?.discriminators ?? []}
-              serverHeadline={turn15.headline}
-              serverDetail={turn15.detail}
-            />
-          )}
+            {turn15?.status === "abstention" && (
+              <Turn15Abstention
+                target={lastAsk?.target ?? null}
+                discriminators={lastAsk?.discriminators ?? []}
+                serverHeadline={turn15.headline}
+                serverDetail={turn15.detail}
+              />
+            )}
 
-          {/* Turn-1.5 RED technical error (FAIL CLOSED). A silent turn-1.5 failure
+            {/* Turn-1.5 RED technical error (FAIL CLOSED). A silent turn-1.5 failure
               lands HERE — and because gateOpen keys ONLY on status:"ok", the dose
               buttons are NOT rendered while this error is shown. */}
-          {turn15?.status === "error" && (
-            <Alert variant="destructive" data-testid="turn15-error">
-              <OctagonX />
-              <AlertTitle>Technical error</AlertTitle>
-              <AlertDescription>{turn15.message}</AlertDescription>
-            </Alert>
-          )}
+            {turn15?.status === "error" && (
+              <Alert variant="destructive" data-testid="turn15-error">
+                <OctagonX />
+                <AlertTitle>Technical error</AlertTitle>
+                <AlertDescription>{turn15.message}</AlertDescription>
+              </Alert>
+            )}
 
-          {/* THE GATE. The dose-enabling guideline buttons render ONLY when
+            {/* THE GATE. The dose-enabling guideline buttons render ONLY when
               gateOpen (turn-1.5 status:"ok"). On an answer-ok we ALSO surface the
               must-not-miss CLEARED banner before Turn 2 auto-runs. */}
-          {turn1Ok && gateOpen && (
-            <>
-              {turn15?.status === "ok" &&
-                turn15.provenance.phase === "answer" && (
-                  // Cleared banner — the ruled-out condition NAME is templated
-                  // from the prior ask's target (lastAsk), not hardcoded.
-                  <MustNotMissClearedBanner target={lastAsk?.target ?? null} />
-                )}
-              <Turn1DecisionGate
-                turn1={turn1Ok}
-                weightConfirmed={weightConfirmed}
-                busy={busy?.kind === "turn2" || busy?.kind === "turn15"}
-                onSelectGuideline={runTurn2}
-              />
-            </>
-          )}
+            {turn1Ok && gateOpen && (
+              <>
+                {turn15?.status === "ok" &&
+                  turn15.provenance.phase === "answer" && (
+                    // Cleared banner — the ruled-out condition NAME is templated
+                    // from the prior ask's target (lastAsk), not hardcoded.
+                    <MustNotMissClearedBanner
+                      target={lastAsk?.target ?? null}
+                    />
+                  )}
+                <Turn1DecisionGate
+                  turn1={turn1Ok}
+                  weightConfirmed={weightConfirmed}
+                  busy={busy?.kind === "turn2" || busy?.kind === "turn15"}
+                  onSelectGuideline={runTurn2}
+                />
+              </>
+            )}
 
-          {/* Turn-2 phase labels while applying. */}
-          {busy?.kind === "turn2" && <PhaseLoader phase={busy.phase} />}
+            {/* Turn-2 phase labels while applying. */}
+            {busy?.kind === "turn2" && <PhaseLoader phase={busy.phase} />}
 
-          {/* Turn-2 result — all four states handled by the view. */}
-          {turn2 && <Turn2View result={turn2} />}
+            {/* Turn-2 result — all four states handled by the view. */}
+            {turn2 && <Turn2View result={turn2} />}
+          </div>
         </div>
       </div>
     </main>
