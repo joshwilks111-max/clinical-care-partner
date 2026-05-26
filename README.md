@@ -69,10 +69,14 @@ source [`docs/architecture.md`](docs/architecture.md).**
 **Judgment up, execution down.** The LLM does the thinking — builds the differential, weighs
 evidence, classifies severity against the guideline's own table, picks the dose *rule by id*.
 Everything that could hurt a patient — picking the guideline (a deterministic routing table) and
-doing the arithmetic (the `calculate_dose` tool) — is deterministic and auditable. The two-turn split
-(differential → STOP for clinician confirmation → apply) **is** the human-in-the-loop mechanism: two
-native round-trips, each independently reproducible, with a server-owned `CaseState` carrying turn 1's
-confirmed outputs into turn 2 (zero re-extraction). The diagram draws that boundary as a visible seam.
+doing the arithmetic (the `calculate_dose` tool) — is deterministic and auditable. The flow is
+turn 1 → (turn 1.5 safety collapse) → turn 2: between the differential and the dose, an optional
+server-side collapse step asks **one** discriminating question to rule out a must-not-miss before
+dosing the treatable — the deterministic core (`decideCollapse`) decides ask / plan / abstain and
+the model only phrases the question. That split (differential → STOP for clinician confirmation →
+collapse → apply) **is** the human-in-the-loop mechanism: native round-trips, each independently
+reproducible, with a server-owned `CaseState` carrying turn 1's confirmed outputs forward (zero
+re-extraction). The diagram draws that boundary as a visible seam.
 
 ### Retrieval: whole-document injection — the right tool for a two-document corpus
 
@@ -138,23 +142,28 @@ own note/transcript), and the **Refusal** demo needs no key at all.
 npm run eval       # wraps: promptfoo eval -c promptfoo.yaml --no-cache
 ```
 
-A captured full green run is committed at **[`tests/evals/sample-output.txt`](tests/evals/sample-output.txt)**
-(33/33 named checks across 8/8 cases). The suite reports **named checks, not an aggregate %** — each
-assertion is its own metric (`case1.dose_mg_2.13`, `case4.capped_true`, `case4.binding_limit_12`,
-`case1.severity_row_moderate`, …), so a silent severity flip or a dropped slot fails a *named* check.
+The suite is now **10 cases**, last live-verified **10/10 (100%, 0 failed, 0 errors)** on this
+branch (~53k tokens, ~2m41s, run id `eval-VZm-2026-05-26`). It reports **named checks, not an
+aggregate %** — each assertion is its own metric (`case1.dose_mg_2.13`, `case4.capped_true`,
+`case4.binding_limit_12`, `case1.severity_row_moderate`, …), so a silent severity flip or a dropped
+slot fails a *named* check. (A captured run is committed at
+**[`tests/evals/sample-output.txt`](tests/evals/sample-output.txt)**; that artifact still shows the
+earlier 8-case run and is a separate regen follow-up — see `TODOS.md`.)
 
 Two layers:
 
-- **Promptfoo** (6 demo cases + prompt-injection + no-matching-guideline) exercises the LLM-bearing
-  behaviour, asserting against the **structured tool output** (not a prose regex), plus a
-  wrong-guideline **audit assertion** (routed `guideline_id` matches the confirmed condition).
+- **Promptfoo** (6 demo cases + prompt-injection + no-matching-guideline + a collapse rule-out→dose
+  case + a must-not-miss-confirmed→abstain case = 10) exercises the LLM-bearing behaviour, asserting
+  against the **structured tool output** (not a prose regex), plus a wrong-guideline **audit
+  assertion** (routed `guideline_id` matches the confirmed condition).
 - **Unit tests** (`tools/*.test.ts`, `registry/*.test.ts`, `lib/*.test.ts`) exercise the
   deterministic guards and edges — the safety spine, exact-assertion tested.
 
 **Reproducibility:** doses are **identical every run** (case1 2.13 mg · case3 0.14 mg/0.14 mL · case4
-12 mg capped · case7 2.13 mg). There is **no temperature** (opus-4-7 takes none) — determinism comes
-from the **deterministic dose tool + Zod-structured output**, not a temperature knob. Cases 2 & 8
-make **zero model calls** (pre-LLM refusal / deterministic abstain).
+12 mg capped · case7 2.13 mg · case9 2.13 mg after the collapse rules out the must-not-miss). There
+is **no temperature** (opus-4-7 takes none) — determinism comes from the **deterministic dose tool +
+Zod-structured output**, not a temperature knob. Cases 2 & 8 make **zero model calls** (pre-LLM
+refusal / deterministic abstain).
 
 The **LLM-as-judge** applicability layer is **deferred and non-gating** — a hook is left in
 `tests/evals/llm-judge-placeholder.ts`; the deterministic checks above are the true gate.
@@ -170,8 +179,12 @@ The **LLM-as-judge** applicability layer is **deferred and non-gating** — a ho
   50mg") cannot change the routed dose or cap.
 - **The dose tool owns every number** — the LLM picks the dose *rule by id*; it can never set the
   cap, the mg/kg, the concentration, or the rounding (npj evidence — see §8).
-- **Refusal gate** — missing weight is a **pre-LLM** deterministic check (no model call); never
-  estimate. Extended to no-matching-guideline → abstain ("no local guideline — I won't guess").
+- **Refusal gates** — missing weight is a **pre-LLM** deterministic check (no model call); never
+  estimate. Extended to: `no_matching_guideline` (nothing matched) and a distinct `wrong_guideline`
+  (a guideline matched but not the confirmed condition — the routed-id audit fires this), both →
+  abstain ("no local guideline — I won't guess"); and a **collapse-abstain** that refuses to dose
+  past an unresolved/positive must-not-miss (turn 1.5, re-checked server-side in turn 2 with zero
+  model calls).
 - **Hard cap fires visibly** — 25 kg severe croup → 15 mg raw → **CAPPED to 12 mg**, recorded
   (`capped: true`, `binding_limit`, trace shows raw→capped).
 - **Completeness check** — the final output is a structured object with required slots; the gate
@@ -285,17 +298,31 @@ scan).
 
 ## 9. Deferred
 
-Full list with build triggers: **[`TODOS.md`](TODOS.md)**. The two sharpest "if I had another day"
-beats:
+Full list with build triggers: **[`TODOS.md`](TODOS.md)**.
 
-- **Wrong-guideline auto-abstain guard** — abstention currently fires on *empty* context, not *wrong*
-  context. v1 already logs the routed `guideline_id` and ships a passing **audit assertion** (routed
-  id matches confirmed condition); only the auto-abstain *behaviour* is deferred. So "deferred" reads
-  as demonstrated awareness, not "didn't notice."
-- **Differential-collapse loop** — ambiguous note → ask a discriminating question → narrow the dx.
-  The real care-partner product; named in the Loom, stubbed in code. KnowGuard (arXiv:2509.24816,
-  HMS/Zitnik, under review) formalises this exact *investigate-before-abstain* paradigm — i.e. the
-  frontier paper *is* our deferred roadmap (`research/papers.md`).
+**Delivered on this branch** (formerly the two sharpest "if I had another day" beats — now shipped):
+
+- **Wrong-guideline auto-abstain guard** — both halves ship. v1 logs the routed `guideline_id`, runs
+  the **audit assertion**, *and* abstains on a mismatch with a distinct `wrong_guideline` reason
+  (separate from `no_matching_guideline`: a guideline matched but not the confirmed condition, vs
+  nothing matched). Not just awareness — the behaviour.
+- **Differential-collapse loop** — ships server-side as turn 1.5: ambiguous differential → one
+  discriminating question → clinician answers → evidence flips deterministically → collapse to one
+  guideline (or abstain). One round (`MAX_ROUNDS = 1`), eval-proven (case9 rule-out→dose, case10
+  must-not-miss→abstain). KnowGuard (arXiv:2509.24816, HMS/Zitnik, under review) formalises this
+  exact *investigate-before-abstain* paradigm — the frontier paper formalises what we now ship.
+
+The next-sharpest genuinely-deferred beats:
+
+- **Mild "watch / observe" croup arm** (`TODOS.md` #10, clinician-flagged) — a no-drug disposition
+  arm needs a disposition-only plan shape and a completeness-gate exception; every croup path
+  currently routes to a dose.
+- **Deterministic severity mapping** (`TODOS.md` #3) — encode the guideline's severity criteria as
+  typed rules instead of free-text classification.
+- **Live-consult / multi-round real-time collapse** (`TODOS.md` #6) — and the knowledge-graph-scale,
+  multi-round version of the collapse loop (`TODOS.md` #4 future / #8): the one-round collapse we
+  ship is the v1; KnowGuard's systematic knowledge-graph exploration is the deferred scale path
+  (`research/papers.md`).
 
 ---
 
@@ -313,10 +340,10 @@ beats:
 ├── lib/                 # router, refusal gate, completeness gate, CaseState, plan schema, retry
 ├── prompts/             # differential (turn 1) + apply (turn 2) prompts
 ├── app/                 # Next.js App Router
-│   ├── api/turn1/ + api/turn2/   # the judgment / execution route handlers (runtime=nodejs)
+│   ├── api/turn1/ + api/turn1.5/ + api/turn2/   # judgment / collapse / execution handlers (runtime=nodejs)
 │   └── console/              # the structured two-panel care-partner console (not a chatbot)
 ├── components/          # shadcn/ui base + AI Elements leaf components (Tool, Sources, InlineCitation)
-├── tests/evals/         # Promptfoo suite (6 + injection + no-guideline) + sample-output.txt + LLM-judge hook
+├── tests/evals/         # Promptfoo suite (10 cases: 6 demo + injection + no-guideline + 2 collapse) + sample-output.txt + LLM-judge hook
 ├── docs/architecture.md # the one-page judgment-up / execution-down diagram
 ├── DESIGN.md            # locked design contract
 └── TODOS.md             # deliberately deferred items + build triggers

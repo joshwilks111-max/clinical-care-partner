@@ -81,10 +81,11 @@ chatbot round-trips, each independently reproducible).
 - **Deterministic routing table** `(condition, profession, setting) → guideline_id`. The clinician
   confirms the condition (turn 1 button); the table DISPATCHES that confirmed diagnosis to the one
   guideline (turn 2). The table does not diagnose — it routes. One guideline per condition. Routed
-  `guideline_id` is logged for every case (audit hook; also the free hook for the deferred
-  wrong-guideline guard). Unknown condition → no match → abstain.
-- **Two-turn HITL** — turn 1 differential → STOP → clinician confirms (extracted weight + guideline) →
-  turn 2 apply. A `CaseState` object carries turn 1's outputs verbatim into turn 2 (server-owned):
+  `guideline_id` is logged and audited for every case; on a mismatch the **shipped** wrong-guideline
+  guard auto-abstains with a distinct `wrong_guideline` reason. Unknown condition → no match → abstain.
+- **HITL flow** — turn 1 differential → STOP → clinician confirms (extracted weight + guideline) →
+  (turn 1.5 safety collapse: ask one discriminating question to rule out a must-not-miss, server-side,
+  ≤1 round) → turn 2 apply. A `CaseState` object carries turn 1's outputs verbatim across the seam (server-owned):
   `{note_hash, extracted_facts, differential, selected_condition, selected_guideline_id,
   selected_severity}`. **Turn 2 does zero re-extraction** — it consumes confirmed state, so each turn is
   independently reproducible and the clinician's confirmation is the only state that crosses the boundary.
@@ -114,14 +115,14 @@ chatbot round-trips, each independently reproducible).
 - **Grounded output, show-the-working ALWAYS** — verbatim section citations + full dose trace
   (rule × inputs → cap → result) + the differential's positive/negative evidence + explicit refusals.
   **Functional but plain UI** — show-the-working beats polish; saved hours go to the Loom.
-- **Eval: two layers.** **Promptfoo (6 demo cases + 2 added: prompt-injection, no-matching-guideline)**
-  exercises LLM-bearing behaviors; **unit tests** (`tools/*.test.ts`, `registry/*.test.ts`) exercise the
+- **Eval: two layers.** **Promptfoo (6 demo cases + 4 added: prompt-injection, no-matching-guideline, and
+  2 collapse cases = 10)** exercises LLM-bearing behaviors; **unit tests** (`tools/*.test.ts`, `registry/*.test.ts`) exercise the
   deterministic guards/edges (the strongest reviewer signal — safety-critical logic is deterministic, so
   it's exact-assertion testable). **Assertions run against the structured tool output**, not a prose regex
   (`dose_mg === 2.13`, `dose_ml === 0.14`, `capped === true`, `binding_limit === 12`). Also assert the
   **severity row selected** (not just final dose), so a silent severity flip is caught. One added eval
   asserts the **routed `guideline_id` matches the confirmed condition** (wrong-guideline audit — the guard
-  stays deferred, the audit passes). Run via `npm run eval` (wraps `npx promptfoo`), named checks not
+  now ships: a mismatch auto-abstains with a distinct `wrong_guideline` reason). Run via `npm run eval` (wraps `npx promptfoo`), named checks not
   aggregate.
 - **One model** — `claude-opus-4-7`. (Spike-corrected 2026-05-25: opus-4-7 does NOT accept `temperature`,
   so demo reproducibility rests on the deterministic dose tool + Zod-structured output, not a temperature
@@ -270,7 +271,7 @@ Plain ≠ no hierarchy. Every state uses ONE layout grammar: **status → primar
 
 ---
 
-## Demo + eval cases (6 + 2 added)
+## Demo + eval cases (6 + 4 added = 10)
 
 The Promptfoo suite is a superset of the on-camera demos, so every demoed behavior has an automated gate.
 Assertions run against the **structured tool output**, not a prose regex.
@@ -291,6 +292,11 @@ Assertions run against the **structured tool output**, not a prose regex.
    rule (injection ignored). Proves the trust boundary.
 8. **[ADDED] No-matching-guideline** — condition with no registry guideline → abstain with distinct "no local
    guideline" copy.
+9. **[ADDED] Collapse rule-out → dose** — croup `likely` + epiglottitis `must-not-miss` (no positive evidence)
+   → turn 1.5 asks the discriminating question → "No, absent" flips the evidence → epiglottitis ruled out →
+   collapse to croup → **2.13mg** (the shipped differential-collapse loop).
+10. **[ADDED] Collapse must-not-miss confirmed → abstain** — the same setup, answer "present" → the must-not-miss
+    is confirmed → abstain (no dose), fail toward stopping.
 
 Plus a **wrong-guideline audit assertion** (routed `guideline_id` matches the confirmed condition; mismatch
 abstains) and **unit tests** for the deterministic guards/edges (exactly-at-cap, zero/negative weight, GUARD-8
@@ -358,6 +364,23 @@ signal); reuse everything else.** Don't reinvent chat/UI plumbing.
 
 ---
 
+## Delivered since the brief (formerly deferred — now shipped)
+
+Two of the original "deferred" beats shipped on this branch. Recorded here so the design record
+stays honest rather than under-claiming.
+
+- **Wrong-guideline guard** — DELIVERED. Both halves: the routed `guideline_id` is logged and audited,
+  AND a mismatch auto-abstains with a distinct `wrong_guideline` reason — separate from
+  `no_matching_guideline` (a guideline matched but not the confirmed condition, vs nothing matched).
+- **Differential-collapse loop** — DELIVERED (server-side turn 1.5, one round, `MAX_ROUNDS = 1`):
+  ambiguous differential → ask one discriminating question → clinician answers → `applyAnswer` flips
+  evidence deterministically → re-decide → collapse to one guideline (or abstain, failing toward
+  stopping). The model only phrases the question; `decideCollapse` owns ask/plan/abstain. Eval-proven
+  (case9 rule-out→dose 2.13, case10 must-not-miss-confirmed→abstain). KnowGuard (arXiv:2509.24816,
+  HMS/Zitnik, under review) formalises this exact *investigate-before-abstain* paradigm — the frontier
+  paper formalises what we now ship (one round); the multi-round / knowledge-graph version is the
+  remaining deferred work (see `research/papers.md` and "Scale retrieval" below).
+
 ## Deliberately deferred (TODO / talking points — the depth signal)
 
 Each is real; none is in scope for 4 days. Naming them — with the trigger to build each — IS the senior
@@ -365,16 +388,8 @@ signal. (Blast radius = a take-home demo, not a deployed clinical system.)
 
 - **Model tier routing** — big model for the differential (judgment), light model for bounded execution.
   A cost optimization, unneeded at demo scale. Articulated, not built.
-- **Wrong-guideline guard** — consistency check that the selected guideline matches the extracted
-  condition (abstention currently fires on EMPTY context, not WRONG context). We log the routed
-  `guideline_id` now as the hook, AND ship a passing **audit assertion** (routed id matches confirmed
-  condition) so awareness is demonstrated; the *guard's auto-abstain behaviour* is the deferred part.
 - **Deterministic severity mapping** — encode the guideline's severity criteria as a typed rule. Scale /
   regulatory hardening; brittle on free-text for a PoC.
-- **Differential-collapse loop** — ambiguous note → ask a discriminating question → narrow the dx. The
-  product vision; named in the Loom, stubbed in code. This is the active *investigate*-before-abstain loop
-  that KnowGuard (arXiv:2509.24816, HMS/Zitnik, under review) formalises — v1 abstains on absent evidence
-  but does not yet loop to gather it. See `research/papers.md`.
 - **LLM-as-judge eval (Layer 2)** — clinically-framed rubric for applicability (faithfulness's blind
   spot). Hook left in `tests/evals/`; deterministic assertions remain the true gate. (If built, use
   domain-framed judge prompts or inherit the paper's ~4% misclassification rate; judge output
@@ -384,9 +399,11 @@ signal. (Blast radius = a take-home demo, not a deployed clinical system.)
   architecture visible for the PoC; the conversational version is the live-consult product, not foreclosed.
 - **Live-consult transcription + real-time collapse** — the product vision; 6-month build, not 4-day.
 - **3rd guideline / non-dose skill** (e.g. interaction-check) — registry proven; data-entry work.
-- **Scale retrieval** — live guideline service / data partnership. We load whole docs because the corpus
-  is tiny; at scale, agentic retrieval over a large corpus — e.g. KnowGuard's systematic knowledge-graph
-  exploration (arXiv:2509.24816) is exactly this path (see `research/papers.md`).
+- **Scale retrieval + multi-round collapse** — live guideline service / data partnership, and the
+  multi-round / knowledge-graph version of the collapse loop we ship one round of. We load whole docs
+  because the corpus is tiny; at scale, agentic retrieval over a large corpus — e.g. KnowGuard's
+  systematic knowledge-graph exploration (arXiv:2509.24816) — is exactly this path, and the same
+  mechanism extends our one-round collapse to multi-round (see `research/papers.md`).
 - **Production privacy** — external LLM API + real patient data = GDPR/HIPAA exposure; on-prem / no-PHI
   for production. Moot for a synthetic-note demo; noted as a limitation.
 
@@ -400,14 +417,18 @@ with the active amber decision, not an error. ·
 **care-partner layer**: weigh the differential (reasoning about what's ABSENT), the clinician steers, then
 execute safely. Retrieval is the easy half." ·
 1:30 **live demo** — real note, Jack → 2.13mg; show the working + the differential's negative-evidence +
-citation. Same harness then produces adrenaline IM 0.14mL (guideline #3 is data-entry, not code). ·
+citation. Same harness then produces adrenaline IM 0.14mL (guideline #3 is data-entry, not code). Then the
+**collapse loop live** — croup `likely` + epiglottitis `must-not-miss` → turn 1.5 asks one discriminating
+question (drooling / tripod / muffled voice?) → "No, absent" → epiglottitis ruled out → collapses to croup →
+2.13mg (and the confirm-present variant abstains instead). The real care-partner loop, shipping. ·
 3:00 **architecture diagram** — judgment up / execution down; the deterministic boundary made a *visible
 seam*; the dose tool owns every number (LLM picks the rule by id, can't set the cap). ·
 4:30 **safety with STAKES** — cap-firing, trust boundary, AND faithfulness≠safety: show a plan that cites the
 dose correctly but silently drops the escalation criterion — "100% faithful, would still hurt a patient;
 faithfulness scores it perfect, my completeness check FAILS it" (case 6). ·
-6:00 **"if I had another day"** — lead with the differential-collapse loop (the real product), then the rest
-of the deferred list. The considered hand-wave. ·
+6:00 **"if I had another day"** — the one-round differential-collapse loop already ships (demoed above), so
+lead the deferred list with the *multi-round* / knowledge-graph version (KnowGuard scale), then the mild
+no-drug croup arm, deterministic severity mapping, and live-consult. The considered hand-wave. ·
 Show your face (warmth is a Heidi value).
 
 ---
@@ -425,8 +446,9 @@ Cap demo: 25kg severe → 15mg → **12mg**. Full sourcing in `research/clinical
 - **Reviewer always sees the demo:** live URL is the PRIMARY path (key server-side, zero reviewer setup);
   local is the documented fallback. The pre-LLM refusal needs no key and is reproducible 100/100.
 - 4 demo cases pass on camera, reproducibly (committed guidelines + 1-click pre-filled notes → same dose every run).
-- Promptfoo suite green (6 + injection + no-guideline), **asserting structured tool output** (not prose) +
-  the wrong-guideline audit; unit tests cover the deterministic edges. `npm run eval` shows named checks.
+- Promptfoo suite green (6 + injection + no-guideline + 2 collapse = 10; last live 10/10), **asserting
+  structured tool output** (not prose) + the wrong-guideline audit; unit tests cover the deterministic
+  edges. `npm run eval` shows named checks.
 - Diagram conveys the judgment→execution boundary at a glance; the boundary is a *visible seam* in-app too.
 - README defensible: a reviewer can trace every choice to evidence in `research/` via an explicit evidence map.
 
@@ -478,7 +500,7 @@ The pre-LLM refusal ships day 1 (no SDK, no model), so the Loom opener is safe r
 6. **Structured-console UI** (shadcn/ui base + AI Elements leaf components — `Tool`, `InlineCitation`,
    `Sources`; NOT the `Conversation` shell) with the locked state contract (two-panel console, amber safety
    accent, provenance seam, fixed dose trace, demo buttons). See "Prior art" + "UI states".
-7. **Promptfoo (6 + 2) + wrong-guideline audit;** `npm run eval`.
+7. **Promptfoo (6 + 4 = 10, incl. 2 collapse) + wrong-guideline audit;** `npm run eval`.
 8. **Deploy live URL** (key server-side) → diagram → Loom.
 
 ---
@@ -506,7 +528,7 @@ Decision audit trail + per-phase task lists in `~/.gstack/projects/gifted-ishiza
 |---|-------|----------|----------------|-----------|-----------|
 | 1 | CEO | HOLD SCOPE mode (not SELECTIVE EXPANSION default) | User-directed | User instruction | Scope locked; validate small scope is right |
 | 2 | CEO | Positioning: care-partner layer, differential as hero | USER GATE | — | User confirmed (Option 1 + "Evidence is one piece") |
-| 3 | CEO | Wrong-guideline guard stays deferred | Taste→user | P3 | Guard deferred; audit assertion added (see #11) |
+| 3 | CEO | Wrong-guideline guard stays deferred | Taste→user | P3 | Guard deferred at review; audit assertion added (see #11). **Superseded — the guard later SHIPPED** (auto-abstain with a distinct `wrong_guideline` reason; see "Delivered since the brief"). |
 | 4 | Design | One amber safety accent, red for tech errors | USER GATE | P5 explicit | Protects refusal + completeness Loom money-shots |
 | 5 | Design | 7 layout/label rules (first-visible, your-turn, dose-trace, provenance seam, phases, citations, demo path) | Mechanical | P5+P1 | Cheap clarity, zero polish, zero scope |
 | 6 | Eng | calculate_dose(guideline_id, dose_rule_id, weight_kg); tool owns numbers | USER GATE | P5 explicit | Enforces trust boundary; LLM can't set the cap |
