@@ -153,7 +153,6 @@ const wellFormedCaseState = {
   selected_guideline_id: null,
   selected_severity: null,
   discriminating_qa: [],
-  round: 0,
 };
 
 describe("isCaseStateLike — shape guard for the turn-1 → turn-2 contract", () => {
@@ -173,12 +172,8 @@ describe("isCaseStateLike — shape guard for the turn-1 → turn-2 contract", (
     ).toBe(true);
   });
 
-  it("accepts a CaseState with round/discriminating_qa omitted (pre-turn1.5 shape)", () => {
-    const {
-      round: _r,
-      discriminating_qa: _qa,
-      ...withoutCounters
-    } = wellFormedCaseState;
+  it("accepts a CaseState with discriminating_qa omitted (pre-turn1.5 shape)", () => {
+    const { discriminating_qa: _qa, ...withoutCounters } = wellFormedCaseState;
     expect(isCaseStateLike(withoutCounters)).toBe(true);
   });
 
@@ -217,6 +212,32 @@ describe("isCaseStateLike — shape guard for the turn-1 → turn-2 contract", (
           ...wellFormedCaseState.extracted_facts,
           weight_kg: "14.2",
         },
+      }),
+    ).toBe(false);
+  });
+
+  it("accepts well-formed discriminating_qa entries", () => {
+    expect(
+      isCaseStateLike({
+        ...wellFormedCaseState,
+        discriminating_qa: [
+          {
+            target: "Epiglottitis",
+            question: "Is the child drooling?",
+            answer: "absent",
+            engaged: true,
+            recorded_at: "2026-05-26T00:00:00.000Z",
+          },
+        ],
+      }),
+    ).toBe(true);
+  });
+
+  it("rejects malformed discriminating_qa entry", () => {
+    expect(
+      isCaseStateLike({
+        ...wellFormedCaseState,
+        discriminating_qa: [{ target: "Epiglottitis", answer: "nope" }],
       }),
     ).toBe(false);
   });

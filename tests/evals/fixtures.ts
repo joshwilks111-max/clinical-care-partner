@@ -195,8 +195,8 @@ export const CASE6_INCOMPLETE: CaseState = caseState({
 // enters turn1.5 decide → returns "ask", then:
 //   case9: answer "absent" → demotes epiglottitis to "possible" → re-decide →
 //          "ok" (starship-croup-2020) → turn2 → dose 2.13 mg.
-//   case10: answer "present" → epiglottitis gains positive evidence → re-decide →
-//           "abstention" (no_matching_guideline). NO turn2 call.
+//   case10: answer "present" → epiglottitis gains positive evidence → turn2 gate abstains
+//           (no_matching_guideline). NO turn2 dose.
 // ---------------------------------------------------------------------------
 export const CASE_COLLAPSE_CROUP: CaseState = buildCaseState({
   note: "Jack T., 3yo, 14.2 kg. Barky cough, stridor at rest, age 3.",
@@ -231,5 +231,4 @@ export const CASE_COLLAPSE_CROUP: CaseState = buildCaseState({
   selectedGuidelineId: null,
   selectedSeverity: null,
   discriminatingQa: [],
-  round: 0,
 });

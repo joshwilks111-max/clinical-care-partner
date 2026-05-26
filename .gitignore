@@ -26,6 +26,12 @@ TODO.local.md
 /tests/evals/usage-totals.json
 /tests/evals/_*.json
 
+# -------- Understand-Anything tool output --------
+# Local code-exploration tool (Claude Code plugin). Its generated knowledge
+# graph + dashboard are a working aid, not part of the submission — keep the
+# whole dir out of git so nothing tool-generated lands in the interview repo.
+/.understand-anything/
+
 # -------- Stack-specific: Next.js + TypeScript --------
 # node_modules/ is covered by the global; these are Next-specific build/gen artefacts
 # the global misses.
@@ -36,3 +42,8 @@ next-env.d.ts
 /coverage/
 .vercel
 .gstack/
+
+# -------- Local tooling (not committed) --------
+.cursor/
+.codex-worktrees/
+.gbrain-source

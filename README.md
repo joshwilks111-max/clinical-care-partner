@@ -70,13 +70,14 @@ source [`docs/architecture.md`](docs/architecture.md).**
 evidence, classifies severity against the guideline's own table, picks the dose *rule by id*.
 Everything that could hurt a patient — picking the guideline (a deterministic routing table) and
 doing the arithmetic (the `calculate_dose` tool) — is deterministic and auditable. The flow is
-turn 1 → (turn 1.5 safety collapse) → turn 2: between the differential and the dose, an optional
-server-side collapse step asks **one** discriminating question to rule out a must-not-miss before
-dosing the treatable — the deterministic core (`decideCollapse`) decides ask / plan / abstain and
-the model only phrases the question. That split (differential → STOP for clinician confirmation →
-collapse → apply) **is** the human-in-the-loop mechanism: native round-trips, each independently
-reproducible, with a server-owned `CaseState` carrying turn 1's confirmed outputs forward (zero
-re-extraction). The diagram draws that boundary as a visible seam.
+turn 1 → turn 1.5 (advisory diagnostic assist) → turn 2: between the differential and the dose,
+Turn 1.5 may recommend **one** high-impact clarifying question about a must-not-miss and a treatable
+guideline pair — advisory only; guideline buttons stay visible. Turn 2 alone abstains on dose when the
+post-answer differential still has an unresolved must-not-miss (`collapseRoundForGate` defense-in-depth).
+The split (differential → optional advisory question → clinician confirms guideline → dose) **is** the
+human-in-the-loop mechanism: native round-trips, each independently reproducible, with a server-owned
+`CaseState` carrying turn 1's confirmed outputs forward (zero re-extraction). The diagram draws that
+boundary as a visible seam.
 
 ### Retrieval: whole-document injection — the right tool for a two-document corpus
 
@@ -133,6 +134,31 @@ own note/transcript), and the **Refusal** demo needs no key at all.
   model call hangs/fails.
 - **(d) The key.** Set `ANTHROPIC_API_KEY` in `.env.local` (copy from `.env.example`, which carries
   the name only, no value). Never commit `.env.local`.
+- **(e) `vercel env pull` returns empty for sensitive vars.** If you're pulling env from this
+  project's Vercel link, `vercel env pull .env.local --environment=production` writes
+  `ANTHROPIC_API_KEY=` (empty) because the production key is marked **Encrypted** and only the
+  Vercel runtime can decrypt it — `pull` only emits the variable name. Symptoms: live calls 401 with
+  `x-api-key header is required` even though `.env.local` "has" the key. Two fixes: paste the real
+  key into `.env.local` by hand, or add a separate **Development** entry on Vercel so future pulls
+  decrypt locally (`vercel env add ANTHROPIC_API_KEY development`, then `vercel env pull
+  .env.local --environment=development`). Production stays sensitive; Development can be plaintext.
+
+### Deployment
+
+- **Live URL:** https://clinical-care-partner.vercel.app
+- **Auto-deploy:** the Vercel project is connected to this GitHub repo via
+  Vercel's native git integration (set up on the Vercel project dashboard, no
+  workflow file required). Every push to `main` — i.e. every merged PR —
+  triggers a production build + deploy on Vercel's infrastructure. The live
+  URL updates a few minutes after merge, no human in the loop. Preview
+  deployments fire on every other branch push, so each PR gets its own
+  preview URL for review.
+- **Manual deploy** (still supported, e.g. for hot-fixing without going
+  through a PR): from a Vercel-linked checkout (`.vercel/project.json`
+  present — get it via `vercel link --yes --project clinical-care-partner
+  --scope joshwilks111-maxs-projects` if missing), run
+  `vercel deploy --prod --yes`. Manual + native paths don't race in
+  practice — they both go through Vercel's pipeline.
 
 ---
 
@@ -306,11 +332,11 @@ Full list with build triggers: **[`TODOS.md`](TODOS.md)**.
   the **audit assertion**, *and* abstains on a mismatch with a distinct `wrong_guideline` reason
   (separate from `no_matching_guideline`: a guideline matched but not the confirmed condition, vs
   nothing matched). Not just awareness — the behaviour.
-- **Differential-collapse loop** — ships server-side as turn 1.5: ambiguous differential → one
-  discriminating question → clinician answers → evidence flips deterministically → collapse to one
-  guideline (or abstain). One round (`MAX_ROUNDS = 1`), eval-proven (case9 rule-out→dose, case10
-  must-not-miss→abstain). KnowGuard (arXiv:2509.24816, HMS/Zitnik, under review) formalises this
-  exact *investigate-before-abstain* paradigm — the frontier paper formalises what we now ship.
+- **Differential-collapse loop (Turn 1.5 advisory rewrite)** — Turn 1.5 is diagnostic-completeness
+  assist only (`ask` | `ok` | `recorded` | `error`; no Turn 1.5 abstention). One optional
+  high-impact question + recommended guideline; clinician can skip or override. Turn 2 remains the
+  dose gate (case9 rule-out→dose 2.13 mg; case10 must-not-miss confirmed→abstain at Turn 2).
+  Prompt artefacts: `prompts/turn1.5-rewrite.md`, live traces in `prompts/turn1.5-rewrite.traces.md`.
 
 The next-sharpest genuinely-deferred beats:
 

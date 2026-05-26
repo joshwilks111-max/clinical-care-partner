@@ -222,5 +222,6 @@ export async function POST(req: Request): Promise<Response> {
     differential: parsed.differential,
     extractedFacts: parsed.extracted_facts,
     candidateGuidelines: parsed.differential.candidate_guidelines,
+    confidence: parsed.confidence,
   });
 }

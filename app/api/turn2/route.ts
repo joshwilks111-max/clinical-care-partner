@@ -38,11 +38,16 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateText, Output, stepCountIs } from "ai";
 
 import { route, auditRoutedGuideline } from "@/lib/router";
-import { decideCollapse } from "@/lib/collapse";
+import {
+  decideCollapse,
+  demoteSharedFindings,
+  type CollapseAbstainReason,
+} from "@/lib/collapse";
 import {
   getGuideline,
   getDoseRule,
   buildConditionGuidelineMap,
+  buildAskableConditionSet,
 } from "@/registry/guidelines";
 import {
   calculate_dose,
@@ -52,6 +57,7 @@ import {
 import { checkCompleteness, type SlotRecord } from "@/lib/completeness";
 import {
   noGuidelineAbstention,
+  unresolvedDangersAbstention,
   wrongGuidelineAbstention,
 } from "@/lib/refusal-gate";
 import { withTransientRetry } from "@/lib/retry";
@@ -72,7 +78,12 @@ import {
   buildPlanUserPrompt,
   type ComputedDoseForPrompt,
 } from "@/prompts/turn2";
-import { isCaseStateLike, type CaseState } from "@/lib/case-state";
+import {
+  isCaseStateLike,
+  withDefaultedDiscriminatingQa,
+  collapseRoundForGate,
+  type CaseState,
+} from "@/lib/case-state";
 
 // Node runtime (NOT edge): the SDK needs it. maxDuration 300s gives the two
 // opus-4-7 calls headroom. (DESIGN.md Stack section — matches turn1.)
@@ -192,7 +203,7 @@ export async function POST(req: Request): Promise<Response> {
       };
       return NextResponse.json(err, { status: 400 });
     }
-    caseState = body.caseState;
+    caseState = withDefaultedDiscriminatingQa(body.caseState);
   } catch {
     const err: TechnicalErrorResponse = {
       status: "error",
@@ -206,30 +217,52 @@ export async function POST(req: Request): Promise<Response> {
   // ===================================================================
   // STEP 1.5 — DEFENSE-IN-DEPTH COLLAPSE GATE.
   //
-  // The PRIMARY decider is turn1.5: in the normal flow it has already collapsed
-  // the differential before turn2 runs (epiglottitis demoted → plan, or the case
-  // abstained at turn1.5 and never reaches turn2 at all). This gate is PURE
-  // defense-in-depth: a hand-crafted POST that skips turn1.5 must not be able to
-  // dose past an unresolved must-not-miss. We run decideCollapse with the SAME
-  // map builder used by turn1.5 (one normalisation, no drift).
+  // Turn 1.5 is advisory only (ask | ok | recorded | error) — it never abstains
+  // or collapses the differential. This gate is PURE defense-in-depth: a hand-
+  // crafted POST that skips turn 1.5 must not dose past an unresolved must-not-
+  // miss. We demote shared findings (Rule-2 over-abstain fix) then run
+  // decideCollapse with the SAME map builder as the collapse core.
   //
-  // Gate fires ONLY on `abstain` — ask and plan fall through unchanged so the
-  // post-turn1.5 happy path (croup differential already collapsed to plan by
-  // turn1.5) is unaffected. If the gate fires: ZERO model calls, amber abstention.
+  // Engaged advisory Q&A sets gateRound via collapseRoundForGate (round 1).
+  // Gate fires ONLY on `abstain` — ask and plan fall through. If it fires: ZERO
+  // model calls, amber abstention.
   // ===================================================================
   {
     const collapseMap = buildConditionGuidelineMap();
-    const collapseDecision = decideCollapse(
+    // F-018 — the askable set encodes which conditions Turn 1.5 could ask about
+    // (i.e. those with registry discriminators). The gate uses it to ignore
+    // unanswerable must-not-miss conditions as blockers — they stay in the UI
+    // for clinician awareness, but they can't be resolved by any question, so
+    // gating on them is moot (and incorrectly forces abstain on cases that
+    // should dose). See lib/collapse.ts:AskableConditionSet for the policy.
+    const askableConditions = buildAskableConditionSet();
+    const differentialForGate = demoteSharedFindings(
       caseState.differential,
       collapseMap,
-      caseState.round,
+    );
+    const gateRound = collapseRoundForGate(caseState);
+    const collapseDecision = decideCollapse(
+      differentialForGate,
+      collapseMap,
+      gateRound,
+      askableConditions,
     );
     if (collapseDecision.action === "abstain") {
+      // F-016 — pick the copy that matches the actual blocker. Rule 2 (positive
+      // must-not-miss) and Rule 3a (>1 unresolved must-not-miss) are about
+      // undischarged danger, NOT a registry miss; using the "no guideline"
+      // copy lied to the clinician. The decider tells us which it was.
+      const abstainReason: CollapseAbstainReason =
+        collapseDecision.reason ?? "no_treatable";
+      const refusal =
+        abstainReason === "unresolved_dangers"
+          ? unresolvedDangersAbstention()
+          : noGuidelineAbstention();
       console.log(
-        `[turn2:gate] defense-in-depth collapse gate fired: action=abstain, round=${caseState.round} — returning abstention, ZERO model calls`,
+        `[turn2:gate] defense-in-depth collapse gate fired: action=abstain, reason=${abstainReason}, round=${gateRound} — returning abstention, ZERO model calls`,
       );
       return NextResponse.json(
-        toAbstentionResponse(fromRefusalDecision(noGuidelineAbstention())),
+        toAbstentionResponse(fromRefusalDecision(refusal)),
       );
     }
   }

@@ -84,8 +84,8 @@ chatbot round-trips, each independently reproducible).
   `guideline_id` is logged and audited for every case; on a mismatch the **shipped** wrong-guideline
   guard auto-abstains with a distinct `wrong_guideline` reason. Unknown condition → no match → abstain.
 - **HITL flow** — turn 1 differential → STOP → clinician confirms (extracted weight + guideline) →
-  (turn 1.5 safety collapse: ask one discriminating question to rule out a must-not-miss, server-side,
-  ≤1 round) → turn 2 apply. A `CaseState` object carries turn 1's outputs verbatim across the seam (server-owned):
+  turn 1.5 advisory diagnostic check (optional high-impact Q&A; no dose abstention here) →
+  turn 2 apply (defense-in-depth collapse gate + dose). A `CaseState` object carries turn 1's outputs verbatim across the seam (server-owned):
   `{note_hash, extracted_facts, differential, selected_condition, selected_guideline_id,
   selected_severity}`. **Turn 2 does zero re-extraction** — it consumes confirmed state, so each turn is
   independently reproducible and the clinician's confirmation is the only state that crosses the boundary.
@@ -372,14 +372,11 @@ stays honest rather than under-claiming.
 - **Wrong-guideline guard** — DELIVERED. Both halves: the routed `guideline_id` is logged and audited,
   AND a mismatch auto-abstains with a distinct `wrong_guideline` reason — separate from
   `no_matching_guideline` (a guideline matched but not the confirmed condition, vs nothing matched).
-- **Differential-collapse loop** — DELIVERED (server-side turn 1.5, one round, `MAX_ROUNDS = 1`):
-  ambiguous differential → ask one discriminating question → clinician answers → `applyAnswer` flips
-  evidence deterministically → re-decide → collapse to one guideline (or abstain, failing toward
-  stopping). The model only phrases the question; `decideCollapse` owns ask/plan/abstain. Eval-proven
-  (case9 rule-out→dose 2.13, case10 must-not-miss-confirmed→abstain). KnowGuard (arXiv:2509.24816,
-  HMS/Zitnik, under review) formalises this exact *investigate-before-abstain* paradigm — the frontier
-  paper formalises what we now ship (one round); the multi-round / knowledge-graph version is the
-  remaining deferred work (see `research/papers.md` and "Scale retrieval" below).
+- **Differential-collapse loop** — DELIVERED (advisory turn 1.5 + Turn 2 defense-in-depth gate,
+  `MAX_ROUNDS = 1`): ambiguous differential → turn 1.5 may ask one high-impact clarifying question
+  (advisory) → clinician answers or skips → `applyAnswer` flips evidence deterministically →
+  Turn 2 runs `demoteSharedFindings` + `decideCollapse` before dosing (collapse or abstain).
+  Eval-proven (case9 rule-out→dose 2.13, case10 must-not-miss-confirmed→abstain).
 
 ## Deliberately deferred (TODO / talking points — the depth signal)
 
@@ -418,9 +415,9 @@ with the active amber decision, not an error. ·
 execute safely. Retrieval is the easy half." ·
 1:30 **live demo** — real note, Jack → 2.13mg; show the working + the differential's negative-evidence +
 citation. Same harness then produces adrenaline IM 0.14mL (guideline #3 is data-entry, not code). Then the
-**collapse loop live** — croup `likely` + epiglottitis `must-not-miss` → turn 1.5 asks one discriminating
-question (drooling / tripod / muffled voice?) → "No, absent" → epiglottitis ruled out → collapses to croup →
-2.13mg (and the confirm-present variant abstains instead). The real care-partner loop, shipping. ·
+**collapse loop live** — croup `likely` + epiglottitis `must-not-miss` → turn 1.5 advisory question
+(drooling / tripod / muffled voice?) → "No, absent" → evidence updated → Turn 2 collapse gate →
+2.13mg (and the confirm-present variant abstains at Turn 2 instead). The real care-partner loop, shipping. ·
 3:00 **architecture diagram** — judgment up / execution down; the deterministic boundary made a *visible
 seam*; the dose tool owns every number (LLM picks the rule by id, can't set the cap). ·
 4:30 **safety with STAKES** — cap-firing, trust boundary, AND faithfulness≠safety: show a plan that cites the

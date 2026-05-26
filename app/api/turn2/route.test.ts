@@ -81,7 +81,6 @@ function makeCaseState(overrides: Partial<CaseState> = {}): CaseState {
     selected_guideline_id: "starship-croup-2020",
     selected_severity: "moderate",
     discriminating_qa: [],
-    round: 0,
     ...overrides,
   };
 }
@@ -556,9 +555,124 @@ describe("POST /api/turn2 — technical error (red) vs success vs incomplete (am
       source?: string;
     };
     expect(body.status).toBe("abstention");
-    expect(body.reason).toBe("no_matching_guideline");
+    // F-016D — Rule 2 (positive must-not-miss) abstains with reason
+    // "unresolved_dangers", NOT "no_matching_guideline". A guideline DID exist
+    // for the selected condition; the abstain was about undischarged danger.
+    expect(body.reason).toBe("unresolved_dangers");
     // NON-VACUOUS: gate fired before any model call.
     expect(generateTextCalls.length).toBe(0);
+  });
+
+  // F-016D regression: when the abstain reason IS a registry miss (empty
+  // differential, multiple treatables with no clear leader), the gate
+  // returns reason="no_matching_guideline" — distinct from the
+  // "unresolved_dangers" path above. Proves the route picks the right
+  // copy variant based on the decider's reason.
+  // Found by /qa on 2026-05-27.
+  // Report: .gstack/qa-reports/qa-report-localhost-2026-05-27.md
+  it("F-016D: empty differential → abstention with reason=no_matching_guideline", async () => {
+    const res = await POST(
+      postCaseState(
+        makeCaseState({
+          differential: {
+            conditions: [],
+            candidate_guidelines: [],
+          },
+          selected_guideline_id: "starship-croup-2020",
+        }),
+      ),
+    );
+    const body = (await res.json()) as {
+      status?: string;
+      reason?: string;
+    };
+    expect(body.status).toBe("abstention");
+    // Rule 1 (empty conditions) → reason=no_treatable → the route picks
+    // noGuidelineAbstention(), wire reason="no_matching_guideline".
+    expect(body.reason).toBe("no_matching_guideline");
+    expect(generateTextCalls.length).toBe(0);
+  });
+
+  // F-018a regression: an unresolved must-not-miss with NO registry
+  // discriminators (e.g. "foreign body aspiration") cannot be asked about
+  // and so cannot block dosing. Before this fix, the gate force-abstained
+  // on the canonical Croup demo (which under live Turn 1 routinely
+  // includes such conditions in the differential).
+  // Found by /qa on 2026-05-27.
+  // Report: .gstack/qa-reports/qa-report-localhost-2026-05-27.md
+  it("F-018a: unaskable unresolved must-not-miss does NOT block — gate falls through to dose", async () => {
+    outputQueue.push(moderateClassification);
+    outputQueue.push(completeCroupPlan);
+    const res = await POST(
+      postCaseState(
+        makeCaseState({
+          differential: {
+            conditions: [
+              {
+                // Foreign body aspiration has no registry meta in v1.
+                // Unresolved must-not-miss, but unanswerable → not a blocker.
+                name: "Foreign body aspiration",
+                likelihood: "must-not-miss",
+                positive_evidence: [],
+                negative_evidence: ["no choking episode"],
+              },
+              {
+                name: "Croup",
+                likelihood: "likely",
+                positive_evidence: ["barky cough", "stridor at rest"],
+                negative_evidence: ["no cyanosis"],
+              },
+            ],
+            candidate_guidelines: [],
+          },
+          selected_guideline_id: "starship-croup-2020",
+        }),
+      ),
+    );
+    const body = (await res.json()) as {
+      status?: string;
+      dose?: { dose_mg?: number };
+    };
+    expect(body.status).toBe("ok");
+    expect(body.dose?.dose_mg).toBe(2.13);
+    // Both model calls happened — proves the gate fell through.
+    expect(generateTextCalls.length).toBe(2);
+  });
+
+  it("shared stridor on croup + epiglottitis: demote before gate → plan, dosing proceeds", async () => {
+    // Without demoteSharedFindings, Rule 2 would false-abstain on shared "stridor at rest".
+    // With demote, epiglottitis's shared copy is demoted and the gate falls through to plan.
+    outputQueue.push(moderateClassification);
+    outputQueue.push(completeCroupPlan);
+
+    const res = await POST(
+      postCaseState(
+        makeCaseState({
+          differential: {
+            conditions: [
+              {
+                name: "Epiglottitis",
+                likelihood: "must-not-miss",
+                positive_evidence: ["stridor at rest"],
+                negative_evidence: [],
+              },
+              {
+                name: "Croup",
+                likelihood: "likely",
+                positive_evidence: ["barky cough", "stridor at rest"],
+                negative_evidence: [],
+              },
+            ],
+            candidate_guidelines: [],
+          },
+          selected_guideline_id: "starship-croup-2020",
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status?: string };
+    expect(body.status).toBe("ok");
+    expect(generateTextCalls.length).toBe(2);
   });
 
   it("null weight in a hand-crafted CaseState → dose-tool GUARD-7 abstains (implausible_weight), STEP B never runs", async () => {

@@ -74,9 +74,13 @@ export const Differential = z.object({
 // path, distinct from the amber clinical refusal).
 // ---------------------------------------------------------------------------
 
+export const Turn1Confidence = z.enum(["low", "medium", "high"]);
+
 export const Turn1Output = z.object({
   extracted_facts: ExtractedFacts,
   differential: Differential,
+  /** Qualitative confidence in the differential given note completeness. */
+  confidence: Turn1Confidence,
 });
 
 // ---------------------------------------------------------------------------
@@ -87,4 +91,8 @@ export type ExtractedFacts = z.infer<typeof ExtractedFacts>;
 export type DifferentialCondition = z.infer<typeof DifferentialCondition>;
 export type CandidateGuideline = z.infer<typeof CandidateGuideline>;
 export type Differential = z.infer<typeof Differential>;
+export type Turn1Confidence = z.infer<typeof Turn1Confidence>;
 export type Turn1Output = z.infer<typeof Turn1Output>;
+
+/** Closed enum for Turn 1.5 discriminating-question answers. */
+export type DiscriminatorAnswer = "present" | "absent" | "not_assessed";

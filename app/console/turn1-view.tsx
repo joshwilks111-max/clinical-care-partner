@@ -12,13 +12,10 @@
 //   D6  provenance: the differential is badged `LLM differential`; the buttons
 //       are the `clinician-selected` seam.
 //
-// THE BEAT-4 SPLIT (fail-closed): the differential render (`Turn1View`) is now
-// SEPARATE from the dose-enabling guideline buttons (`Turn1DecisionGate`). The
-// turn-1.5 collapse decider must interrupt BETWEEN them, so console.tsx renders
-// the differential always, but renders the decision gate ONLY when it holds a
-// turn-1.5 status:"ok" signal (the case has no unresolved must-not-miss). Keeping
-// the gate as its own exported component lets the shell control exactly when the
-// dose-enabling buttons enter the DOM — they are absent in every other state.
+// THE BEAT-4 SPLIT: the differential render (`Turn1View`) is separate from the
+// dose-enabling guideline buttons (`Turn1DecisionGate`). Turn 1.5 is advisory
+// only — the high-impact question card may render alongside the gate. Turn 2 is
+// the sole dose-abstention point.
 //
 // Both are pure presentational + a callback: they render a Turn1Success fixture
 // and call onSelectGuideline when the clinician picks. (Refusal/error/ask states
@@ -26,6 +23,9 @@
 
 "use client";
 
+import { AlertTriangle } from "lucide-react";
+
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { cn } from "@/components/lib/utils";
@@ -137,6 +137,16 @@ export function Turn1View({ turn1 }: Turn1ViewProps) {
 
   return (
     <section data-testid="turn1-view" className="space-y-3">
+      {turn1.confidence === "low" && (
+        <Alert variant="safety" data-testid="turn1-low-confidence">
+          <AlertTriangle />
+          <AlertTitle className="text-[13px]">Low confidence differential</AlertTitle>
+          <AlertDescription className="text-[12px]">
+            The note was sparse or ambiguous. Review findings carefully before
+            applying a guideline.
+          </AlertDescription>
+        </Alert>
+      )}
       {/* Step header with the JUDGMENT provenance badge. */}
       <div className="flex items-center gap-2">
         <span className="flex size-6 items-center justify-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
@@ -165,30 +175,28 @@ export function Turn1View({ turn1 }: Turn1ViewProps) {
 
 export type Turn1DecisionGateProps = {
   turn1: Turn1Success;
-  /** Called when the clinician picks a guideline (the "your turn" affordance). */
   onSelectGuideline: (guidelineId: string, condition: string) => void;
-  /** True once the weight has been confirmed (disables the guideline buttons). */
   weightConfirmed: boolean;
-  /** Disable buttons while turn 2 is in flight. */
   busy?: boolean;
+  /** Highlight the model-recommended guideline (advisory preselect). */
+  recommendedGuidelineId?: string | null;
 };
 
 /**
  * Turn1DecisionGate — the DOSE-ENABLING "your turn" guideline buttons (D3).
  *
- * FAIL-CLOSED CONTRACT: this component is the ONLY place the dose-enabling
- * buttons exist, and the shell (console.tsx) renders it ONLY when it holds a
- * turn-1.5 status:"ok" signal (no unresolved must-not-miss). In every other
- * turn-1.5 state — initial / decide-in-flight / ask / abstention / error — the
- * shell does NOT render this component, so the buttons are ABSENT from the DOM.
- * "Disabled while busy/unconfirmed" is a SECONDARY guard on the already-rendered
- * buttons; the PRIMARY safety guard is render-gating by the ok-signal upstream.
+ * The shell (console.tsx) renders this when `gateOpen` is true:
+ * turn1Ok && weightConfirmed && !turn15InFlight. The advisory high-impact
+ * question card may be visible at the same time (status "ask"); Turn 2 is the
+ * dose-abstention point, not Turn 1.5. "Disabled while busy/unconfirmed" is a
+ * secondary guard on the already-rendered buttons.
  */
 export function Turn1DecisionGate({
   turn1,
   onSelectGuideline,
   weightConfirmed,
   busy = false,
+  recommendedGuidelineId = null,
 }: Turn1DecisionGateProps) {
   const ranked = rankConditions(turn1.differential.conditions);
   const candidates = turn1.candidateGuidelines;
@@ -232,21 +240,27 @@ export function Turn1DecisionGate({
       )}
 
       <div className="flex flex-wrap gap-2">
-        {candidates.map((g) => (
-          <Button
-            key={g.guideline_id}
-            data-guideline-id={g.guideline_id}
-            disabled={!weightConfirmed || busy}
-            onClick={() =>
-              onSelectGuideline(
-                g.guideline_id,
-                conditionForGuideline(g.guideline_id),
-              )
-            }
-          >
-            Apply {g.label}
-          </Button>
-        ))}
+        {candidates.map((g) => {
+          const isRecommended = recommendedGuidelineId === g.guideline_id;
+          return (
+            <Button
+              key={g.guideline_id}
+              data-guideline-id={g.guideline_id}
+              data-recommended={isRecommended ? "true" : undefined}
+              variant={isRecommended ? "default" : "outline"}
+              disabled={!weightConfirmed || busy}
+              onClick={() =>
+                onSelectGuideline(
+                  g.guideline_id,
+                  conditionForGuideline(g.guideline_id),
+                )
+              }
+            >
+              Apply {g.label}
+              {isRecommended ? " (recommended)" : ""}
+            </Button>
+          );
+        })}
       </div>
     </div>
   );

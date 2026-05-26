@@ -122,6 +122,7 @@ describe("Turn1Output schema — the combined structured-output contract", () =>
         profession: null,
         setting: null,
       },
+      confidence: "high",
       differential: {
         conditions: [
           {
