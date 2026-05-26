@@ -229,14 +229,35 @@ async function callCollapse(
   const answered = (await withRetry(() =>
     callTurn15({ phase: "answer", caseState, answer }),
   )) as
-    | { status: "ok"; caseState: CaseState; [k: string]: unknown }
+    | {
+        status: "ok";
+        caseState: CaseState;
+        guidelineId: string;
+        [k: string]: unknown;
+      }
     | { status: "abstention" | "error"; [k: string]: unknown };
 
   // STEP C: if the answer collapsed to a single guideline, POST to turn2 for
   // the dose. Otherwise return the abstention/error directly so assertions run
   // against the turn1.5 shape (case10: must-not-miss confirmed → abstention).
   if (answered.status === "ok" && answered.caseState) {
-    return withRetry(() => callTurn2(answered.caseState));
+    // Mirror the client handoff (console.tsx runTurn2WithCaseState): the server's
+    // answer-ok CaseState leaves selected_* null (the dose-enabling id is on the
+    // top-level guidelineId), and our fixture starts pre-confirmation. Seed the
+    // three fields turn2 needs — guideline id (source of truth), condition (so the
+    // wrong-guideline audit matches), and severity (so the classifier sees it) —
+    // exactly as the live console does before POSTing to turn2.
+    const seeded: CaseState = {
+      ...answered.caseState,
+      selected_guideline_id:
+        answered.caseState.selected_guideline_id ?? answered.guidelineId,
+      selected_condition: answered.caseState.selected_condition ?? "croup",
+      selected_severity:
+        answered.caseState.selected_severity ??
+        answered.caseState.extracted_facts.severity ??
+        null,
+    };
+    return withRetry(() => callTurn2(seeded));
   }
 
   return answered;

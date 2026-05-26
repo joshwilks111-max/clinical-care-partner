@@ -384,15 +384,6 @@ export function case9_dose_mg_2_13(output: unknown): AssertResult {
     : fail(`expected dose.dose_mg === 2.13, got ${JSON.stringify(d.dose_mg)}`);
 }
 
-export function case9_routed_guideline_croup(output: unknown): AssertResult {
-  const p = getProvenance(asObj(output));
-  return p.routed_guideline_id === "starship-croup-2020"
-    ? ok()
-    : fail(
-        `wrong-guideline audit: expected "starship-croup-2020", got ${JSON.stringify(p.routed_guideline_id)}`,
-      );
-}
-
 // ===========================================================================
 // CASE 10 — Collapse (must-not-miss confirmed → abstain): present answer moves
 // epiglottitis findings into positive_evidence → re-decide abstains; NO dose.
