@@ -15,7 +15,10 @@ export type Turn15Recommendation = {
   recommended_guideline: string;
 };
 
-export type Turn15FlowBusy = { kind: "turn15"; phase: "checking-safety" } | null;
+export type Turn15FlowBusy = {
+  kind: "turn15";
+  phase: "checking-safety";
+} | null;
 
 export function turn15InFlight(busy: Turn15FlowBusy): boolean {
   return busy?.kind === "turn15";
@@ -103,7 +106,15 @@ export function useTurn15Flow(
   }
 
   async function runAnswer(answer: DiscriminatorAnswer | null) {
-    if (!turn1Ok || !pendingAsk) return;
+    // F-014 — snapshot pendingAsk + turn1Ok at function entry. The previous
+    // version read them from outer-scope closure, so a render between click
+    // and fetch could swap pendingAsk to a stale ref (if Turn 1 re-ran or
+    // the parent reset turn15) — the body would then mix the CURRENT
+    // caseState with a STALE ask. Snapshotting at entry makes the function's
+    // contract "answer the ask that was active when you clicked".
+    const askSnapshot = pendingAsk;
+    const turn1Snapshot = turn1Ok;
+    if (!turn1Snapshot || !askSnapshot) return;
     setTurn15Busy({ kind: "turn15", phase: "checking-safety" });
     let data: Turn15Response;
     try {
@@ -112,12 +123,12 @@ export function useTurn15Flow(
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           phase: "answer",
-          caseState: turn1Ok.caseState,
+          caseState: turn1Snapshot.caseState,
           answer,
-          target: pendingAsk.target,
-          question: pendingAsk.question,
-          recommended_condition: pendingAsk.recommended_condition,
-          recommended_guideline: pendingAsk.recommended_guideline,
+          target: askSnapshot.target,
+          question: askSnapshot.question,
+          recommended_condition: askSnapshot.recommended_condition,
+          recommended_guideline: askSnapshot.recommended_guideline,
         }),
       });
       data = (await res.json()) as Turn15Response;
