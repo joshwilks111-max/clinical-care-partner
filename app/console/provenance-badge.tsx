@@ -33,11 +33,12 @@ const LABELS: Record<ProvenanceKind, string> = {
   "completeness-gate": "completeness gate",
 };
 
-// "judgment" vs "execution" tint — the visible seam. LLM = judgment (violet);
-// all deterministic/clinician kinds = execution (slate/teal). Kept as plain
-// utility classes so the tint reads in light + dark without new tokens.
-const JUDGMENT =
-  "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200";
+// "judgment" vs "execution" tint — the visible seam. LLM = judgment (sky);
+// all deterministic/clinician kinds = execution (slate). Kept as plain utility
+// classes so the tint reads in light + dark without new tokens. Sky over violet
+// is a deliberate retreat from the violet/indigo AI-generated-UI signal: the
+// semantic seam (judgment vs execution) is preserved with a calmer hue.
+const JUDGMENT = "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200";
 const EXECUTION =
   "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200";
 
