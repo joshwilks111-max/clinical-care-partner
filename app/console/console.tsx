@@ -317,13 +317,13 @@ export function Console() {
           Notes vs Transcripts so the weight-present/weight-absent transcript pair
           reads as a deliberate parsing-vs-refusal contrast, not a button wall. */}
       <section data-testid="demo-buttons" className="mb-5">
-        <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Demo cases — one click, no typing
         </p>
         <div className="space-y-3">
           {(["note", "transcript"] as const).map((group) => (
             <div key={group}>
-              <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
                 {group === "note" ? "Notes" : "Transcripts"}
               </p>
               <div className="flex flex-wrap gap-2">
@@ -360,7 +360,7 @@ export function Console() {
       <section data-testid="paste-own" className="mb-5 border-t pt-4">
         <label
           htmlFor="paste-note"
-          className="mb-1.5 block text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+          className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground"
         >
           Or paste your own note or transcript
         </label>
@@ -426,7 +426,7 @@ export function Console() {
             <Alert variant="safety" data-testid="turn1-refusal">
               <ShieldAlert />
               <AlertTitle className="flex items-center gap-2">
-                <span className="font-mono text-[10px] tracking-wide">
+                <span className="font-mono text-[11px] tracking-wide">
                   DELIBERATE ABSTENTION
                 </span>
               </AlertTitle>

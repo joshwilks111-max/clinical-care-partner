@@ -82,7 +82,7 @@ export function SafetyCheckCard({
       <div className="mb-2 flex items-center gap-2">
         <span
           data-testid="safety-check-eyebrow"
-          className="font-mono text-[10px] font-semibold uppercase tracking-wide text-safety-foreground"
+          className="font-mono text-[11px] font-semibold uppercase tracking-wide text-safety-foreground"
         >
           RULE OUT · {target.toUpperCase()}
         </span>
@@ -177,7 +177,7 @@ export function Turn15Abstention({
       <Alert variant="safety" data-testid="turn15-abstention-alert">
         <ShieldAlert />
         <AlertTitle className="flex items-center gap-2">
-          <span className="font-mono text-[10px] tracking-wide">{eyebrow}</span>
+          <span className="font-mono text-[11px] tracking-wide">{eyebrow}</span>
         </AlertTitle>
         <AlertDescription className="text-[13px] font-semibold text-safety-foreground">
           {headline}
@@ -216,7 +216,7 @@ export function MustNotMissClearedBanner({
     >
       <CheckCircle2 className="text-emerald-600" />
       <AlertTitle className="flex items-center gap-2">
-        <span className="font-mono text-[10px] tracking-wide">
+        <span className="font-mono text-[11px] tracking-wide">
           MUST-NOT-MISS CLEARED
         </span>
       </AlertTitle>

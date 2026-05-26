@@ -64,7 +64,7 @@ export function ProvenanceBadge({ kind, className }: ProvenanceBadgeProps) {
     <Badge
       data-provenance={kind}
       className={cn(
-        "font-mono text-[10px] font-medium tracking-tight",
+        "font-mono text-[11px] font-medium tracking-tight",
         TINT[kind],
         className,
       )}

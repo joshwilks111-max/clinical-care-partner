@@ -125,7 +125,7 @@ function CompletenessCard({
       >
         <TriangleAlert />
         <AlertTitle className="flex items-center gap-2">
-          <span className="font-mono text-[10px] tracking-wide">
+          <span className="font-mono text-[11px] tracking-wide">
             COMPLETENESS CHECK
           </span>
           <ProvenanceBadge kind="completeness-gate" />
@@ -147,7 +147,7 @@ function CompletenessCard({
     >
       <CheckCircle2 className="text-emerald-600" />
       <AlertTitle className="flex items-center gap-2">
-        <span className="font-mono text-[10px] tracking-wide">
+        <span className="font-mono text-[11px] tracking-wide">
           COMPLETENESS CHECK
         </span>
         <ProvenanceBadge kind="completeness-gate" />
@@ -190,7 +190,7 @@ function StepHeader() {
         2
       </span>
       <span className="text-sm font-semibold">Apply</span>
-      <span className="font-mono text-[10px] text-muted-foreground">
+      <span className="font-mono text-[11px] text-muted-foreground">
         deterministic / constrained
       </span>
     </div>
@@ -208,7 +208,7 @@ function OkView({ res }: { res: Extract<Turn2Response, { status: "ok" }> }) {
       <Card>
         <CardContent className="space-y-2">
           <div className="flex items-center justify-between">
-            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Dose
             </div>
             <ProvenanceBadge kind="dose-tool" />
@@ -235,7 +235,7 @@ function OkView({ res }: { res: Extract<Turn2Response, { status: "ok" }> }) {
       <Card>
         <CardContent className="space-y-3">
           <div className="flex items-center justify-between">
-            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Plan & citations
             </div>
             <ProvenanceBadge kind="guideline-citation" />
@@ -265,7 +265,7 @@ function IncompleteView({
       <Alert variant="safety" data-testid="incomplete-headline">
         <ShieldAlert />
         <AlertTitle className="flex items-center gap-2">
-          <span className="font-mono text-[10px] tracking-wide">
+          <span className="font-mono text-[11px] tracking-wide">
             COMPLETENESS CHECK
           </span>
         </AlertTitle>
@@ -279,7 +279,7 @@ function IncompleteView({
       <Card>
         <CardContent className="space-y-3">
           <div className="flex items-center justify-between">
-            <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
               Plan & citations (incomplete)
             </div>
             <ProvenanceBadge kind="guideline-citation" />
@@ -307,7 +307,7 @@ function AbstentionView({
       <Alert variant="safety" data-testid="abstention-headline">
         <ShieldAlert />
         <AlertTitle className="flex items-center gap-2">
-          <span className="font-mono text-[10px] tracking-wide">
+          <span className="font-mono text-[11px] tracking-wide">
             DELIBERATE ABSTENTION
           </span>
         </AlertTitle>

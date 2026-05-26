@@ -62,7 +62,7 @@ function LikelihoodTag({
     <span
       data-likelihood={likelihood}
       className={cn(
-        "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+        "rounded-full px-2 py-0.5 text-[11px] font-semibold",
         isMnm
           ? "bg-safety text-safety-foreground"
           : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200",
@@ -86,7 +86,7 @@ function ConditionRow({ condition }: { condition: DifferentialCondition }) {
 
       {/* Positive evidence — the primary supporting column. */}
       <div>
-        <div className="text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Supports
         </div>
         <div className="mt-1 text-[13px] text-emerald-700 dark:text-emerald-300">
@@ -98,7 +98,7 @@ function ConditionRow({ condition }: { condition: DifferentialCondition }) {
 
       {/* D5 — NEGATIVE EVIDENCE: muted pills, secondary to positive. The moat. */}
       <div>
-        <div className="text-[10.5px] font-medium uppercase tracking-wide text-muted-foreground">
+        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Findings absent / not documented
         </div>
         <div className="mt-1 flex flex-wrap gap-1">
@@ -149,7 +149,7 @@ export function Turn1View({ turn1 }: Turn1ViewProps) {
       {/* D1 — the ranked list is first-thing-visible, must-not-miss first. */}
       <Card>
         <CardHeader className="pb-0">
-          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
             Weighted differential
           </div>
         </CardHeader>
