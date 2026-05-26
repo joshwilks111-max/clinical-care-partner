@@ -1,9 +1,12 @@
 # Architecture — judgment up, execution down
 
 One picture, one boundary. The LLM does the **judgment** (build the differential, weigh
-evidence, classify severity against the guideline's own table). Everything that could hurt a
-patient — picking the guideline, doing the arithmetic — is **deterministic and auditable**. The
-seam between them is the whole design.
+evidence, classify severity against the guideline's own table, phrase the discriminating
+question). Everything that could hurt a patient — deciding whether to collapse the differential,
+picking the guideline, doing the arithmetic — is **deterministic and auditable**. Between the
+differential and the dose, a server-side turn 1.5 collapse step asks one discriminating question
+to rule out a must-not-miss before dosing the treatable. The seam between judgment and execution
+is the whole design.
 
 ```mermaid
 flowchart TD
@@ -23,8 +26,22 @@ flowchart TD
     PRE -- "weight present" --> EXTRACT
     EXTRACT --> STOP --> CONFIRM
 
+    %% ───────────────── TURN 1.5 · SAFETY COLLAPSE (server-side, ≤1 round) ─────────────────
+    subgraph T15["TURN 1.5 · COLLAPSE  (server-side · the deterministic core decides · MAX_ROUNDS = 1)"]
+        direction TB
+        DECIDE{"decideCollapse(map, round)<br/>unresolved must-not-miss?<br/><i>deterministic — never the model</i>"}:::gate
+        ASK["LLM PHRASES one discriminating<br/>question (drooling / tripod / muffled?)"]:::llm
+        ANSWER["Clinician answers (yes / <b>No, absent</b>)"]:::human
+        FLIP["applyAnswer → flip evidence<br/>deterministically · re-decide at round+1"]:::det
+    end
+
+    CONFIRM --> DECIDE
+    DECIDE -- "unresolved must-not-miss<br/>+ 1 treatable top → <b>ask</b>" --> ASK
+    ASK --> ANSWER --> FLIP --> DECIDE
+    DECIDE -- "positive/unresolved must-not-miss<br/>can't be ruled out → <b>abstain</b>" --> RG15["ABSTAIN · fail toward stopping<br/><i>amber · don't dose past a must-not-miss</i>"]:::abstain
+
     %% ═══════════ THE BOUNDARY ═══════════
-    CONFIRM ==> SEAM{{"═══  judgment ends · execution begins  ═══"}}:::seam
+    DECIDE == "collapse to ONE guideline → <b>plan</b>" ==> SEAM{{"═══  judgment ends · execution begins  ═══"}}:::seam
 
     %% ───────────────── TURN 2 · EXECUTION (deterministic / constrained) ─────────────────
     subgraph T2["TURN 2 · EXECUTION  (deterministic / constrained — consumes confirmed CaseState, ZERO re-extraction)"]
@@ -72,15 +89,23 @@ flowchart TD
 | 🔴 Red | **Untrusted input.** The note is wrapped as data, never as instructions. (Red is also reserved in-app for genuine *technical* errors — e.g. a Zod parse failure — distinct from amber clinical decisions.) |
 | ⬛ The seam | `═══ judgment ends · execution begins ═══` — the two-turn split **is** the human-in-the-loop mechanism. Two native round-trips, each independently reproducible. |
 
-## The four refusal gates (fail closed, every one)
+## The five refusal gates (fail closed, every one)
 
 1. **Pre-LLM weight-missing** — no kg weight in the note → abstain with **zero model calls**
    (the key-free, reproducible-100/100 Loom opener). Never estimate a paediatric dose from age.
-2. **No-matching-guideline** — the router finds no row, or the routed id doesn't match the
-   confirmed condition → abstain ("no local guideline — I won't guess"), distinct copy.
-3. **Cap fired** — raw dose exceeds the drug max → capped to `binding_limit`, recorded visibly
+2. **No-matching / wrong guideline** — two distinct reasons, both render amber via the generic
+   abstention view. `no_matching_guideline`: the router finds no row — **nothing** matched the
+   condition (empty context). `wrong_guideline`: a guideline matched but **not the
+   clinician-confirmed condition** (wrong context — e.g. the routed id is anaphylaxis when the
+   confirmed condition is croup). The turn-2 audit (`auditRoutedGuideline`) fires the latter
+   and abstains ("no local guideline — I won't guess").
+3. **Collapse-abstain** — an unresolved or positive must-not-miss that can't be ruled out →
+   abstain, **fail toward stopping**. The turn-1.5 `decideCollapse` decides this server-side; a
+   turn-2 defense-in-depth gate re-runs the same check (**zero model calls**) so a raw POST can't
+   skip turn 1.5 and dose past a must-not-miss.
+4. **Cap fired** — raw dose exceeds the drug max → capped to `binding_limit`, recorded visibly
    in the trace (`raw → CAPPED`), not silently clamped.
-4. **Completeness fired** — a clinically-required output slot is missing or null → `incomplete`,
+5. **Completeness fired** — a clinically-required output slot is missing or null → `incomplete`,
    the missing field named. This is the omission guard: **faithful ≠ safe** — a plan can cite the
    dose perfectly and still drop the escalation criterion.
 
@@ -95,5 +120,7 @@ flowchart TD
   injection case.
 - The extracted **weight is clinician-confirmed** before any dose runs — the human owns the single
   safety-critical input.
-- Turn 2 **never re-reads the note**: `CaseState` carries only `note_hash` + confirmed structured
-  facts across the seam, so there is no untrusted command channel in the execution half.
+- Neither turn 1.5 nor turn 2 **re-reads the note**: `CaseState` carries only `note_hash` +
+  confirmed structured facts across the collapse step and the seam, so there is no untrusted
+  command channel in the collapse or the execution half — the collapse decision reads the
+  structured differential, never the raw text.

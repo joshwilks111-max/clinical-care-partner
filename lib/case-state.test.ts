@@ -5,11 +5,17 @@
 //   - note_hash is a deterministic SHA-256 hex of the raw note;
 //   - buildCaseState carries turn-1 outputs VERBATIM (the zero-re-extraction
 //     invariant turn 2 relies on);
-//   - selected_* default to null and can be seeded.
+//   - selected_* default to null and can be seeded;
+//   - isCaseStateLike correctly narrows valid CaseState shapes and rejects bad ones.
 
 import { describe, it, expect } from "vitest";
 import { createHash } from "node:crypto";
-import { buildCaseState, hashNote, type CaseState } from "./case-state";
+import {
+  buildCaseState,
+  hashNote,
+  isCaseStateLike,
+  type CaseState,
+} from "./case-state";
 import type { ExtractedFacts, Differential } from "./schemas";
 
 const facts: ExtractedFacts = {
@@ -118,5 +124,100 @@ describe("buildCaseState — clinician confirmations can be seeded", () => {
     expect(state.selected_condition).toBe("croup");
     expect(state.selected_guideline_id).toBe("starship-croup-2020");
     expect(state.selected_severity).toBe("moderate");
+  });
+});
+
+// A minimal well-formed CaseState for isCaseStateLike tests.
+const wellFormedCaseState = {
+  note_hash: "a".repeat(64),
+  extracted_facts: {
+    condition_hints: ["croup"],
+    severity: "moderate",
+    weight_kg: 14.2,
+    age: "3yo",
+    profession: null,
+    setting: null,
+  },
+  differential: {
+    conditions: [
+      {
+        name: "Croup",
+        likelihood: "likely",
+        positive_evidence: [],
+        negative_evidence: [],
+      },
+    ],
+    candidate_guidelines: [],
+  },
+  selected_condition: null,
+  selected_guideline_id: null,
+  selected_severity: null,
+  discriminating_qa: [],
+  round: 0,
+};
+
+describe("isCaseStateLike — shape guard for the turn-1 → turn-2 contract", () => {
+  it("accepts a well-formed CaseState", () => {
+    expect(isCaseStateLike(wellFormedCaseState)).toBe(true);
+  });
+
+  it("accepts a CaseState where weight_kg is null (unknown weight)", () => {
+    expect(
+      isCaseStateLike({
+        ...wellFormedCaseState,
+        extracted_facts: {
+          ...wellFormedCaseState.extracted_facts,
+          weight_kg: null,
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it("accepts a CaseState with round/discriminating_qa omitted (pre-turn1.5 shape)", () => {
+    const {
+      round: _r,
+      discriminating_qa: _qa,
+      ...withoutCounters
+    } = wellFormedCaseState;
+    expect(isCaseStateLike(withoutCounters)).toBe(true);
+  });
+
+  it("rejects null", () => {
+    expect(isCaseStateLike(null)).toBe(false);
+  });
+
+  it("rejects a non-object (string)", () => {
+    expect(isCaseStateLike("not-an-object")).toBe(false);
+  });
+
+  it("rejects a CaseState missing note_hash", () => {
+    const { note_hash: _, ...noHash } = wellFormedCaseState;
+    expect(isCaseStateLike(noHash)).toBe(false);
+  });
+
+  it("rejects a CaseState where differential.conditions is not an array", () => {
+    expect(
+      isCaseStateLike({
+        ...wellFormedCaseState,
+        differential: { conditions: "not-an-array", candidate_guidelines: [] },
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects a CaseState with no differential at all", () => {
+    const { differential: _, ...noDiff } = wellFormedCaseState;
+    expect(isCaseStateLike(noDiff)).toBe(false);
+  });
+
+  it("rejects a CaseState where weight_kg is a string (bad UI value)", () => {
+    expect(
+      isCaseStateLike({
+        ...wellFormedCaseState,
+        extracted_facts: {
+          ...wellFormedCaseState.extracted_facts,
+          weight_kg: "14.2",
+        },
+      }),
+    ).toBe(false);
   });
 });

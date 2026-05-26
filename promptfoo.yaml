@@ -7,7 +7,7 @@
 # JavaScript check (its own `metric`) so `npm run eval` reports per-check pass/fail,
 # not an aggregate %.
 #
-# 8 cases (6 demo + 2 added), plus a cross-case WRONG-GUIDELINE AUDIT and an
+# 10 cases (6 demo + 4 added), plus a cross-case WRONG-GUIDELINE AUDIT and an
 # explicit SEVERITY-ROW assertion (so a silent severity flip is caught — case 1
 # must be "moderate", case 4 "severe").
 #
@@ -16,7 +16,7 @@
 # deterministic tool + Zod-structured output, so it comes out identical every run
 # (proven by the reps in the README sample).
 
-description: Clinical Care-Partner — structured-output gate (8 cases + audit)
+description: Clinical Care-Partner — structured-output gate (10 cases + audit)
 
 # The custom provider IS the pipeline: it drives the real route handlers and
 # returns the structured response object as `output` for the named assertions.
@@ -207,3 +207,42 @@ tests:
       - type: javascript
         value: file://tests/evals/assertions.ts:case8_distinct_no_guideline_copy
         metric: case8.distinct_copy
+
+  # =========================================================================
+  # CASE 9 — Collapse (rule-out → dose): clinician answers "absent" →
+  # epiglottitis demoted to "possible" → collapse resolves to croup →
+  # turn2 → 2.13 mg dexamethasone.
+  # =========================================================================
+  - description: "Case 9 — Collapse rule-out: absent answer → collapse → 2.13mg dose"
+    vars:
+      kind: collapse
+      case_id: case9
+      answer: absent
+    assert:
+      - type: javascript
+        value: file://tests/evals/assertions.ts:case9_status_ok
+        metric: case9.status_ok
+      - type: javascript
+        value: file://tests/evals/assertions.ts:case9_dose_mg_2_13
+        metric: case9.dose_mg_2.13
+      - type: javascript
+        value: file://tests/evals/assertions.ts:audit_routed_guideline_croup
+        metric: case9.wrong_guideline_audit
+
+  # =========================================================================
+  # CASE 10 — Collapse (must-not-miss confirmed → abstain): clinician answers
+  # "present" → epiglottitis gains positive evidence → re-decide abstains.
+  # NO turn2 call; no dose issued.
+  # =========================================================================
+  - description: "Case 10 — Collapse confirm: present answer → abstention (no dose)"
+    vars:
+      kind: collapse
+      case_id: case10
+      answer: present
+    assert:
+      - type: javascript
+        value: file://tests/evals/assertions.ts:case10_status_abstention
+        metric: case10.status_abstention
+      - type: javascript
+        value: file://tests/evals/assertions.ts:case10_reason_no_guideline
+        metric: case10.reason_no_guideline

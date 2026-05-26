@@ -362,3 +362,47 @@ export function audit_routed_guideline_anaphylaxis(
         `wrong-guideline audit: expected "ascia-anaphylaxis-2024", got ${JSON.stringify(p.routed_guideline_id)}`,
       );
 }
+
+// ===========================================================================
+// CASE 9 — Collapse (rule-out → dose): absent answer demotes epiglottitis →
+// collapse resolves to croup → turn2 → 2.13 mg dexamethasone.
+// ===========================================================================
+
+export function case9_status_ok(output: unknown): AssertResult {
+  const o = asObj(output);
+  return o.status === "ok"
+    ? ok()
+    : fail(
+        `expected status "ok" (collapse rule-out → dose), got "${o.status}"`,
+      );
+}
+
+export function case9_dose_mg_2_13(output: unknown): AssertResult {
+  const d = getDose(asObj(output));
+  return d.dose_mg === 2.13
+    ? ok()
+    : fail(`expected dose.dose_mg === 2.13, got ${JSON.stringify(d.dose_mg)}`);
+}
+
+// ===========================================================================
+// CASE 10 — Collapse (must-not-miss confirmed → abstain): present answer moves
+// epiglottitis findings into positive_evidence → re-decide abstains; NO dose.
+// ===========================================================================
+
+export function case10_status_abstention(output: unknown): AssertResult {
+  const o = asObj(output);
+  return o.status === "abstention"
+    ? ok()
+    : fail(
+        `expected status "abstention" (must-not-miss confirmed → abstain), got "${o.status}"`,
+      );
+}
+
+export function case10_reason_no_guideline(output: unknown): AssertResult {
+  const o = asObj(output);
+  return o.reason === "no_matching_guideline"
+    ? ok()
+    : fail(
+        `expected reason "no_matching_guideline", got ${JSON.stringify(o.reason)}`,
+      );
+}

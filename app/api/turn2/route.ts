@@ -38,21 +38,30 @@ import { createAnthropic } from "@ai-sdk/anthropic";
 import { generateText, Output, stepCountIs } from "ai";
 
 import { route, auditRoutedGuideline } from "@/lib/router";
-import { getGuideline, getDoseRule } from "@/registry/guidelines";
+import { decideCollapse } from "@/lib/collapse";
+import {
+  getGuideline,
+  getDoseRule,
+  buildConditionGuidelineMap,
+} from "@/registry/guidelines";
 import {
   calculate_dose,
   isRefusal,
   type DoseResult,
 } from "@/tools/calculate_dose";
 import { checkCompleteness, type SlotRecord } from "@/lib/completeness";
-import { noGuidelineAbstention } from "@/lib/refusal-gate";
+import {
+  noGuidelineAbstention,
+  wrongGuidelineAbstention,
+} from "@/lib/refusal-gate";
 import { withTransientRetry } from "@/lib/retry";
 import {
   PlanOutput,
   buildPlanOutputSchema,
   fromDoseRefusal,
   fromRefusalDecision,
-  type Abstention,
+  toAbstentionResponse,
+  type AbstentionResponse,
   type PlanOutput as PlanOutputType,
 } from "@/lib/plan-schema";
 import {
@@ -63,7 +72,7 @@ import {
   buildPlanUserPrompt,
   type ComputedDoseForPrompt,
 } from "@/prompts/turn2";
-import type { CaseState } from "@/lib/case-state";
+import { isCaseStateLike, type CaseState } from "@/lib/case-state";
 
 // Node runtime (NOT edge): the SDK needs it. maxDuration 300s gives the two
 // opus-4-7 calls headroom. (DESIGN.md Stack section — matches turn1.)
@@ -107,11 +116,6 @@ export type SuccessResponse = {
   provenance: Provenance;
 };
 
-export type AbstentionResponse = { status: "abstention" } & Omit<
-  Abstention,
-  "kind"
->;
-
 // Renders amber like an abstention, but is a DISTINCT status: a plan EXISTS and
 // is returned to show with the missing field(s) flagged (not a deliberate refusal).
 export type IncompleteResponse = {
@@ -142,17 +146,6 @@ export type Turn2Response =
 // Helpers.
 // ---------------------------------------------------------------------------
 
-/** Map a unified Abstention onto the HTTP response shape (drops `kind`). */
-function abstentionResponse(a: Abstention): AbstentionResponse {
-  return {
-    status: "abstention",
-    reason: a.reason,
-    headline: a.headline,
-    detail: a.detail,
-    source: a.source,
-  };
-}
-
 /**
  * FIX 3 (ADV-4) — normalise a string for quote-verification substring matching:
  * lowercase + collapse all whitespace runs (incl. newlines) to single spaces +
@@ -168,24 +161,6 @@ function normalizeForQuoteMatch(s: string): string {
     .replace(/\s+/g, " ")
     .replace(/^[\s"'“”.,;:–—-]+|[\s"'“”.,;:–—-]+$/g, "")
     .trim();
-}
-
-/** Narrow + validate the posted CaseState enough to drive turn 2 safely. */
-function isCaseStateLike(v: unknown): v is CaseState {
-  if (typeof v !== "object" || v === null) return false;
-  const c = v as Record<string, unknown>;
-  const facts = c.extracted_facts;
-  if (typeof facts !== "object" || facts === null) return false;
-  const f = facts as Record<string, unknown>;
-  const weightOk = f.weight_kg === null || typeof f.weight_kg === "number";
-  return (
-    typeof c.note_hash === "string" &&
-    weightOk &&
-    (c.selected_condition === null ||
-      typeof c.selected_condition === "string") &&
-    (c.selected_guideline_id === null ||
-      typeof c.selected_guideline_id === "string")
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -229,6 +204,37 @@ export async function POST(req: Request): Promise<Response> {
   const facts = caseState.extracted_facts;
 
   // ===================================================================
+  // STEP 1.5 — DEFENSE-IN-DEPTH COLLAPSE GATE.
+  //
+  // The PRIMARY decider is turn1.5: in the normal flow it has already collapsed
+  // the differential before turn2 runs (epiglottitis demoted → plan, or the case
+  // abstained at turn1.5 and never reaches turn2 at all). This gate is PURE
+  // defense-in-depth: a hand-crafted POST that skips turn1.5 must not be able to
+  // dose past an unresolved must-not-miss. We run decideCollapse with the SAME
+  // map builder used by turn1.5 (one normalisation, no drift).
+  //
+  // Gate fires ONLY on `abstain` — ask and plan fall through unchanged so the
+  // post-turn1.5 happy path (croup differential already collapsed to plan by
+  // turn1.5) is unaffected. If the gate fires: ZERO model calls, amber abstention.
+  // ===================================================================
+  {
+    const collapseMap = buildConditionGuidelineMap();
+    const collapseDecision = decideCollapse(
+      caseState.differential,
+      collapseMap,
+      caseState.round,
+    );
+    if (collapseDecision.action === "abstain") {
+      console.log(
+        `[turn2:gate] defense-in-depth collapse gate fired: action=abstain, round=${caseState.round} — returning abstention, ZERO model calls`,
+      );
+      return NextResponse.json(
+        toAbstentionResponse(fromRefusalDecision(noGuidelineAbstention())),
+      );
+    }
+  }
+
+  // ===================================================================
   // EXECUTION — STEP 2: SELECT the guideline the clinician CLICKED.
   //
   // FIX 1 (P0) — selected_guideline_id is the SOURCE OF TRUTH. The clinician's
@@ -266,18 +272,20 @@ export async function POST(req: Request): Promise<Response> {
   // No guideline determined → abstain "no local guideline" (distinct copy).
   if (routedId === null) {
     return NextResponse.json(
-      abstentionResponse(fromRefusalDecision(noGuidelineAbstention())),
+      toAbstentionResponse(fromRefusalDecision(noGuidelineAbstention())),
     );
   }
 
   // Wrong-guideline AUDIT (now non-tautological): the CLICKED guideline's
   // registered condition must equal the clinician-confirmed condition. This
   // CATCHES the wrong-guideline case (e.g. condition "croup" but the clicked id
-  // is the anaphylaxis guideline) and abstains rather than silently dosing the
-  // wrong drug.
+  // is the anaphylaxis guideline) and abstains with reason "wrong_guideline"
+  // rather than silently dosing the wrong drug. The copy is distinct from
+  // "no guideline matches" — a guideline EXISTS, it just does not match the
+  // confirmed condition.
   if (!auditRoutedGuideline(condition, routedId)) {
     return NextResponse.json(
-      abstentionResponse(fromRefusalDecision(noGuidelineAbstention())),
+      toAbstentionResponse(fromRefusalDecision(wrongGuidelineAbstention())),
     );
   }
 
@@ -288,7 +296,7 @@ export async function POST(req: Request): Promise<Response> {
   const guideline = getGuideline(routedId);
   if (guideline === null) {
     return NextResponse.json(
-      abstentionResponse(fromRefusalDecision(noGuidelineAbstention())),
+      toAbstentionResponse(fromRefusalDecision(noGuidelineAbstention())),
     );
   }
 
@@ -356,7 +364,7 @@ export async function POST(req: Request): Promise<Response> {
     weight,
   );
   if (isRefusal(doseResult)) {
-    return NextResponse.json(abstentionResponse(fromDoseRefusal(doseResult)));
+    return NextResponse.json(toAbstentionResponse(fromDoseRefusal(doseResult)));
   }
 
   const provenance: Provenance = {

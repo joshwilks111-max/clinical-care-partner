@@ -24,6 +24,14 @@ import type { ExtractedFacts, Differential } from "@/lib/schemas";
  * The frozen turn-1 result + the clinician's confirmations. Server-owned:
  * constructed on the server from turn-1's validated output; the selected_* slots
  * are filled by the clinician's UI selections before turn 2 runs.
+ *
+ * SERVER-OWNED fields (turn1.5 writes; turn2 reads but NEVER mutates):
+ *   - discriminating_qa: the Q&A pairs produced by the turn-1.5 collapse loop.
+ *     Turn1.5 is the sole writer; turn2 may read for context but must not append.
+ *   - round: collapse loop iteration counter. Turn1.5 increments it each time it
+ *     asks a discriminating question. Turn2 reads but MUST NOT write it —
+ *     defense-in-depth: if turn2 mutated round it could bypass the MAX_ROUNDS
+ *     safety guard in decideCollapse.
  */
 export type CaseState = {
   /** SHA-256 hex of the raw note — pins provenance without carrying the text. */
@@ -38,7 +46,41 @@ export type CaseState = {
   selected_guideline_id: string | null;
   /** Clinician-confirmed severity row (null until confirmed). */
   selected_severity: string | null;
+  /** Discriminating Q&A from the turn-1.5 collapse loop. SERVER-OWNED — only turn1.5 appends. */
+  discriminating_qa: { question: string; answer: string; round: number }[];
+  /** Collapse round counter. SERVER-OWNED — only turn1.5 increments; turn2 never mutates it. */
+  round: number;
 };
+
+/**
+ * Narrow + validate an unknown value as a CaseState enough to drive the collapse
+ * core and both route handlers (turn1.5 + turn2). `round` and `discriminating_qa`
+ * are optional — a pre-turn1.5 POST may omit them; callers normalise with
+ * withDefaultedCounters. `differential.conditions` is validated as an array;
+ * the nested condition shape is not checked (collapse tolerates an empty/odd array
+ * by abstaining). weight_kg must be null or a number (not a string from a bad UI).
+ */
+export function isCaseStateLike(v: unknown): v is CaseState {
+  if (typeof v !== "object" || v === null) return false;
+  const c = v as Record<string, unknown>;
+  const facts = c.extracted_facts;
+  if (typeof facts !== "object" || facts === null) return false;
+  const f = facts as Record<string, unknown>;
+  const weightOk = f.weight_kg === null || typeof f.weight_kg === "number";
+  const differentialOk =
+    typeof c.differential === "object" &&
+    c.differential !== null &&
+    Array.isArray((c.differential as Record<string, unknown>).conditions);
+  return (
+    typeof c.note_hash === "string" &&
+    weightOk &&
+    differentialOk &&
+    (c.selected_condition === null ||
+      typeof c.selected_condition === "string") &&
+    (c.selected_guideline_id === null ||
+      typeof c.selected_guideline_id === "string")
+  );
+}
 
 /**
  * SHA-256 hex digest of the raw note. Deterministic, dependency-light
@@ -65,6 +107,11 @@ export function buildCaseState(args: {
   selectedCondition?: string | null;
   selectedGuidelineId?: string | null;
   selectedSeverity?: string | null;
+  /** Discriminating Q&A from the collapse loop. Defaults to []. Turn1.5 seeds this
+   *  when rebuilding CaseState with an incremented round. */
+  discriminatingQa?: { question: string; answer: string; round: number }[];
+  /** Collapse round counter. Defaults to 0. Only turn1.5 should pass a non-zero value. */
+  round?: number;
 }): CaseState {
   return {
     note_hash: hashNote(args.note),
@@ -73,5 +120,7 @@ export function buildCaseState(args: {
     selected_condition: args.selectedCondition ?? null,
     selected_guideline_id: args.selectedGuidelineId ?? null,
     selected_severity: args.selectedSeverity ?? null,
+    discriminating_qa: args.discriminatingQa ?? [],
+    round: args.round ?? 0,
   };
 }

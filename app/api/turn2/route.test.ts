@@ -59,10 +59,29 @@ function makeCaseState(overrides: Partial<CaseState> = {}): CaseState {
       profession: null,
       setting: null,
     },
-    differential: { conditions: [], candidate_guidelines: [] },
+    // Default differential collapses to `plan` via decideCollapse rule 5:
+    // one treatable mapped condition (croup → starship-croup-2020), no
+    // unresolved must-not-miss. This keeps existing happy-path tests intact
+    // after the defense-in-depth gate was added (an empty conditions array
+    // triggers rule 1 → abstain and would otherwise break every dose test).
+    differential: {
+      conditions: [
+        {
+          name: "Croup",
+          likelihood: "likely",
+          positive_evidence: [],
+          negative_evidence: [],
+        },
+      ],
+      candidate_guidelines: [
+        { guideline_id: "starship-croup-2020", label: "Croup (Starship NZ)" },
+      ],
+    },
     selected_condition: "croup",
     selected_guideline_id: "starship-croup-2020",
     selected_severity: "moderate",
+    discriminating_qa: [],
+    round: 0,
     ...overrides,
   };
 }
@@ -142,9 +161,23 @@ describe("POST /api/turn2 — bad input", () => {
 });
 
 describe("POST /api/turn2 — abstentions (amber), before/around the model", () => {
-  it("unknown condition (route null) → amber abstention, NO model call", async () => {
+  // NEGATIVE CONTROL 1 (null-router branch): no guideline was clicked AND the
+  // condition routes to nothing → the deterministic router returns null. This
+  // must stay no_matching_guideline (NOT wrong_guideline) — it proves the two
+  // reasons don't collapse. selected_guideline_id is null so the route falls
+  // through to route(); with a croup id present it would instead hit the
+  // wrong-guideline AUDIT branch (a different reason), which is the mismatch
+  // test below — keeping them separate is the whole point of this control.
+  // (The default croup differential collapses to plan, so the Task-9 gate falls
+  // through to the router branch this test targets — the gate is transparent here.)
+  it("unknown condition + no clicked guideline (route null) → amber abstention, NO model call", async () => {
     const res = await POST(
-      postCaseState(makeCaseState({ selected_condition: "appendicitis" })),
+      postCaseState(
+        makeCaseState({
+          selected_condition: "appendicitis",
+          selected_guideline_id: null,
+        }),
+      ),
     );
     const body = (await res.json()) as {
       status?: string;
@@ -157,9 +190,18 @@ describe("POST /api/turn2 — abstentions (amber), before/around the model", () 
     expect(generateTextCalls.length).toBe(0);
   });
 
-  it("empty confirmed condition → amber abstention, NO model call", async () => {
+  // NEGATIVE CONTROL 2 (null-router branch via empty condition): no condition
+  // confirmed AND no guideline clicked → route("") returns null. Stays
+  // no_matching_guideline (NOT wrong_guideline). (As above, the default croup
+  // differential collapses to plan, so the Task-9 gate falls through first.)
+  it("empty confirmed condition + no clicked guideline → amber abstention, NO model call", async () => {
     const res = await POST(
-      postCaseState(makeCaseState({ selected_condition: null })),
+      postCaseState(
+        makeCaseState({
+          selected_condition: null,
+          selected_guideline_id: null,
+        }),
+      ),
     );
     const body = (await res.json()) as { status?: string; reason?: string };
     expect(body.status).toBe("abstention");
@@ -277,9 +319,16 @@ describe("POST /api/turn2 — technical error (red) vs success vs incomplete (am
       source?: string;
     };
     expect(body.status).toBe("abstention");
-    expect(body.reason).toBe("no_matching_guideline");
+    // wrong_guideline (NOT no_matching_guideline): a guideline EXISTS, it just
+    // targets a different condition than the one confirmed. The distinct reason
+    // is what proves this branch is real and not collapsed into the null/unknown
+    // branches (the negative controls above, ~line 155 / ~line 166).
+    expect(body.reason).toBe("wrong_guideline");
+    // source stays "no-guideline" (Decision #16) — wrong_guideline does NOT get
+    // its own source; it shares the no-guideline layer.
     expect(body.source).toBe("no-guideline");
-    // The mismatch is caught BEFORE any model call — we never dose the wrong drug.
+    // NON-VACUITY: the mismatch is caught BEFORE any model call — we never dose
+    // the wrong drug. This zero-model-calls pin is what makes the test real.
     expect(generateTextCalls.length).toBe(0);
   });
 
@@ -472,6 +521,44 @@ describe("POST /api/turn2 — technical error (red) vs success vs incomplete (am
     // The TOOL owns the number: 14.2 × 0.15 = 2.13, NOT the model's 50.
     expect(body.dose?.dose_mg).toBe(2.13);
     expect(body.dose?.dose_mg).not.toBe(50);
+  });
+
+  it("defense-in-depth: hand-crafted POST with unresolved must-not-miss abstains with 0 model calls", async () => {
+    // Collapse rule 2: a must-not-miss WITH positive evidence → abstain.
+    // The clinician's selected_guideline_id is the real croup id, so the
+    // existing guideline-selection checks would pass — but the gate fires FIRST,
+    // before ANY model call. This proves the gate isn't client-only: you cannot
+    // skip turn1.5 and dose past a dangerous must-not-miss via a raw POST.
+    // outputQueue is intentionally empty: if the gate were removed the route
+    // would call generateText with an empty queue and this test would throw,
+    // which is the non-vacuous proof the gate fired.
+    const res = await POST(
+      postCaseState(
+        makeCaseState({
+          differential: {
+            conditions: [
+              {
+                name: "Epiglottitis",
+                likelihood: "must-not-miss",
+                positive_evidence: ["drooling", "tripod posture"],
+                negative_evidence: [],
+              },
+            ],
+            candidate_guidelines: [],
+          },
+          selected_guideline_id: "starship-croup-2020",
+        }),
+      ),
+    );
+    const body = (await res.json()) as {
+      status?: string;
+      reason?: string;
+      source?: string;
+    };
+    expect(body.status).toBe("abstention");
+    expect(body.reason).toBe("no_matching_guideline");
+    // NON-VACUOUS: gate fired before any model call.
+    expect(generateTextCalls.length).toBe(0);
   });
 
   it("null weight in a hand-crafted CaseState → dose-tool GUARD-7 abstains (implausible_weight), STEP B never runs", async () => {

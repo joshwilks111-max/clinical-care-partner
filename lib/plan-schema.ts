@@ -19,7 +19,8 @@
 //        implausible_weight | invalid_dose_rule_id | rule_not_verified. Fires
 //        INSIDE execution, when the deterministic tool cannot safely compute.
 //      * RefusalDecision (lib/refusal-gate)      — reasons: weight_missing |
-//        no_matching_guideline. Fires BEFORE the model / when no guideline exists.
+//        no_matching_guideline | wrong_guideline. Fires BEFORE the model / when
+//        no guideline exists or the selected guideline mismatches the condition.
 //    They live at DIFFERENT layers (pre-LLM context-gate vs in-tool math-gate),
 //    so they SHOULD stay separate at their source. But the console UI
 //    (app/console) must render ONE amber "deliberate abstention" state regardless
@@ -120,7 +121,8 @@ export function buildPlanOutputSchema(guideline: Guideline) {
  * Which layer abstained — kept for provenance/debugging and so the UI could (if
  * it wanted) badge the seam. It does NOT change the amber treatment.
  *   - "pre-llm"     : the pre-LLM weight gate (refusal-gate, weight_missing).
- *   - "no-guideline": no registry guideline / router null (refusal-gate).
+ *   - "no-guideline": no registry guideline / router null, OR a wrong-guideline
+ *                     condition/guideline mismatch (refusal-gate).
  *   - "dose-tool"   : the deterministic dose tool refused mid-execution.
  */
 export type AbstentionSource = "pre-llm" | "dose-tool" | "no-guideline";
@@ -134,6 +136,7 @@ export type AbstentionReason =
   // from RefusalDecision (lib/refusal-gate)
   | "weight_missing"
   | "no_matching_guideline"
+  | "wrong_guideline"
   // from DoseRefusal (tools/calculate_dose)
   | "implausible_weight"
   | "invalid_dose_rule_id"
@@ -174,17 +177,20 @@ export function fromDoseRefusal(r: DoseRefusal): Abstention {
 }
 
 /**
- * Adapt the pre-LLM / no-guideline refusal onto the unified Abstention. The
- * gate's `copy` is the headline. `source` is derived from the reason:
- * no_matching_guideline → "no-guideline"; weight_missing → "pre-llm". A refusal
- * with `refuse: false` is a caller bug (we only adapt a fired refusal), so we
- * fail closed with a defensive weight_missing abstention rather than emit a
- * malformed "abstention" that didn't actually abstain.
+ * Adapt the pre-LLM / no-guideline / wrong-guideline refusal onto the unified
+ * Abstention. The gate's `copy` is the headline. `source` is derived from the
+ * reason: no_matching_guideline | wrong_guideline → "no-guideline";
+ * weight_missing → "pre-llm". A refusal with `refuse: false` is a caller bug
+ * (we only adapt a fired refusal), so we fail closed with a defensive
+ * weight_missing abstention rather than emit a malformed "abstention" that
+ * didn't actually abstain.
  */
 export function fromRefusalDecision(d: RefusalDecision): Abstention {
   const reason = d.reason ?? "weight_missing";
   const source: AbstentionSource =
-    reason === "no_matching_guideline" ? "no-guideline" : "pre-llm";
+    reason === "no_matching_guideline" || reason === "wrong_guideline"
+      ? "no-guideline"
+      : "pre-llm";
   return {
     kind: "abstention",
     reason,
@@ -194,5 +200,33 @@ export function fromRefusalDecision(d: RefusalDecision): Abstention {
         : "Abstaining: a required safety condition was not met.",
     detail: null,
     source,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Shared HTTP response adapter — used by both turn1.5 and turn2 routes.
+// ---------------------------------------------------------------------------
+
+/**
+ * The wire shape every route returns for a deliberate abstention. Defined once
+ * here (alongside Abstention) so turn1.5/route.ts and turn2/route.ts don't each
+ * redeclare an identical type and function.
+ */
+export type AbstentionResponse = { status: "abstention" } & Omit<
+  Abstention,
+  "kind"
+>;
+
+/**
+ * Map a unified Abstention onto the HTTP response shape (drops `kind`).
+ * Shared by turn1.5 and turn2 — the only place this mapping lives.
+ */
+export function toAbstentionResponse(a: Abstention): AbstentionResponse {
+  return {
+    status: "abstention",
+    reason: a.reason,
+    headline: a.headline,
+    detail: a.detail,
+    source: a.source,
   };
 }

@@ -14,11 +14,19 @@
 //   "turn2"          → POST the pinned CaseState to /api/turn2; return Turn2Response.
 //   "turn1_refusal"  → POST a weightless note to /api/turn1; return the refusal
 //                      shape. PRE-LLM gate → ZERO model calls (the key-free proof).
-//   "injection"      → POST the injected note to /api/turn1, build the confirmed
-//                      CaseState from its output, then POST to /api/turn2. The
-//                      routed dose must be the registry value, never the injected 50.
+//   "injection"      → POST the injected note to /api/turn1 (untrusted note as data,
+//                      no 50mg emitted — STEP A). The live note's differential is
+//                      un-collapsible (multiple positive must-not-miss airway emergencies
+//                      → decideCollapse abstains, which is correct safety behavior), so
+//                      the dose leg runs on a PINNED collapsible croup differential
+//                      (CASE_COLLAPSE_CROUP) via callCollapse — proving routed dose
+//                      stays 2.13 (registry), never 50 (injected).
 //   "case6"          → run the real turn-2 MODEL pipeline against the eval
 //                      guideline with one uncoverable slot (case6-pipeline.ts).
+//   "collapse"       → POST the collapse CaseState to /api/turn1.5 (decide), then
+//                      POST the clinician's answer (answer), then — if "ok" —
+//                      POST to /api/turn2. Returns Turn2Response (dose) on "ok" or
+//                      the turn1.5 AbstentionResponse when the must-not-miss holds.
 //
 // TOKENS: harness-env installs a global-fetch tap that tallies real Anthropic
 // usage across every model call. We report a per-call DELTA as promptfoo
@@ -41,7 +49,9 @@ installFetchTap();
 // Routes + helpers are imported AFTER the tap is installed.
 import { POST as turn2POST } from "@/app/api/turn2/route";
 import { POST as turn1POST } from "@/app/api/turn1/route";
-import { buildCaseState, type CaseState } from "@/lib/case-state";
+import { POST as turn15POST } from "@/app/api/turn1.5/route";
+import type { DiscriminatorAnswer } from "@/app/api/turn1.5/route";
+import type { CaseState } from "@/lib/case-state";
 import type { Turn1Output } from "@/lib/schemas";
 import { runCase6 } from "./case6-pipeline";
 import {
@@ -53,6 +63,7 @@ import {
   CASE6_INCOMPLETE,
   CASE7_INJECTION_NOTE,
   CASE8_NO_GUIDELINE,
+  CASE_COLLAPSE_CROUP,
 } from "./fixtures";
 
 // case_id → the pinned turn-2 CaseState fixture (kept here so promptfoo.yaml only
@@ -70,6 +81,14 @@ const TURN2_FIXTURES: Record<string, CaseState> = {
 const NOTE_FIXTURES: Record<string, string> = {
   case2: CASE2_REFUSE_NO_WEIGHT_NOTE,
   case7: CASE7_INJECTION_NOTE,
+};
+
+// case_id → the collapse CaseState (turn1.5 decide→answer→turn2/abstain).
+// case9 and case10 share the same input state — the answer var (absent/present)
+// drives which terminal they reach.
+const COLLAPSE_FIXTURES: Record<string, CaseState> = {
+  case9: CASE_COLLAPSE_CROUP,
+  case10: CASE_COLLAPSE_CROUP,
 };
 
 // ---------------------------------------------------------------------------
@@ -165,8 +184,112 @@ async function callTurn1(note: string): Promise<unknown> {
   return res.json();
 }
 
-/** Injection: turn1 (untrusted note as data) → build CaseState → turn2. */
+async function callTurn15(body: {
+  phase: "decide" | "answer";
+  caseState: CaseState;
+  answer?: DiscriminatorAnswer;
+}): Promise<unknown> {
+  const req = new Request("http://localhost/api/turn1.5", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const res = await turn15POST(req);
+  return res.json();
+}
+
+/**
+ * Collapse: decide phase → answer phase → turn2 (if ok) or abstention.
+ *
+ * Mirrors the structure + comment style of callInjection. The decide phase
+ * calls the model (question phrasing) so withRetry wraps it. The answer phase
+ * is deterministic code only — retry is harmless and consistent with
+ * callInjection's approach of retrying turn2 too.
+ */
+async function callCollapse(
+  caseState: CaseState,
+  answer: DiscriminatorAnswer,
+): Promise<unknown> {
+  // STEP A: decide phase — the model phrases one discriminating question.
+  // We expect status:"ask" for the collapse fixture; anything else surfaces as a
+  // visible fail (wrong decide is NOT silently treated as a pass).
+  const decide = (await withRetry(() =>
+    callTurn15({ phase: "decide", caseState }),
+  )) as
+    | { status: "ask"; caseState?: CaseState; [k: string]: unknown }
+    | { status: "ok" | "abstention" | "error"; [k: string]: unknown };
+
+  if (decide.status !== "ask") {
+    // Surfaced to the eval so a wrong decide action is visible (not silently a pass).
+    return {
+      status: decide.status,
+      _stage: "turn15-decide",
+      _note: "collapse decide expected ask",
+    };
+  }
+
+  // STEP B: answer phase — deterministic evidence flip + re-decide. No model
+  // call here; retry is harmless (matches callInjection's turn2 retry pattern).
+  const answered = (await withRetry(() =>
+    callTurn15({ phase: "answer", caseState, answer }),
+  )) as
+    | {
+        status: "ok";
+        caseState: CaseState;
+        guidelineId: string;
+        [k: string]: unknown;
+      }
+    | { status: "abstention" | "error"; [k: string]: unknown };
+
+  // STEP C: if the answer collapsed to a single guideline, POST to turn2 for
+  // the dose. Otherwise return the abstention/error directly so assertions run
+  // against the turn1.5 shape (case10: must-not-miss confirmed → abstention).
+  if (answered.status === "ok" && answered.caseState) {
+    // Mirror the client handoff (console.tsx runTurn2WithCaseState): the server's
+    // answer-ok CaseState leaves selected_* null (the dose-enabling id is on the
+    // top-level guidelineId), and our fixture starts pre-confirmation. Seed the
+    // three fields turn2 needs — guideline id (source of truth), condition (so the
+    // wrong-guideline audit matches), and severity (so the classifier sees it).
+    // NOTE: the eval uses a literal "croup" fallback because the fixture is
+    // CASE_COLLAPSE_CROUP and the harness doesn't have the registry available
+    // in a tree-shaken eval bundle. The live console derives condition from
+    // getGuideline(guidelineId)?.condition (see console.tsx runTurn2WithCaseState).
+    const seeded: CaseState = {
+      ...answered.caseState,
+      selected_guideline_id:
+        answered.caseState.selected_guideline_id ?? answered.guidelineId,
+      selected_condition: answered.caseState.selected_condition ?? "croup",
+      selected_severity:
+        answered.caseState.selected_severity ??
+        answered.caseState.extracted_facts.severity ??
+        null,
+    };
+    return withRetry(() => callTurn2(seeded));
+  }
+
+  return answered;
+}
+
+/**
+ * Injection: turn1 (untrusted note as data) → collapse+dose on a PINNED
+ * collapsible croup differential.
+ *
+ * STEP A proves the first half of the injection defense: the model processes
+ * the override text as data and returns a structured turn1 result — it never
+ * emits a 50mg dose directly.
+ *
+ * The live note's differential is intentionally un-collapsible (multiple
+ * positive must-not-miss airway emergencies → decideCollapse rule 2 abstains,
+ * which is correct safety behavior). So STEP B drives the collapse→dose leg
+ * on CASE_COLLAPSE_CROUP (a pinned clean-croup fixture) instead, proving the
+ * routed dose is the registry value (2.13), never the injected 50.
+ */
 async function callInjection(note: string): Promise<unknown> {
+  // STEP A: turn1 — the untrusted injection note is processed AS DATA. A real
+  // structured turn1 result (not a 50mg dose) is the first half of the injection
+  // proof. The note's live differential is intentionally un-collapsible (it lists
+  // several positive must-not-miss airway emergencies → decideCollapse abstains,
+  // which is correct safety behavior), so we do NOT dose against it directly.
   const t1 = (await withRetry(() => callTurn1(note))) as
     | {
         status: "ok";
@@ -181,19 +304,12 @@ async function callInjection(note: string): Promise<unknown> {
     return { status: t1.status, _stage: "turn1", _note: "injection turn1" };
   }
 
-  // The clinician confirms croup + the croup guideline (the injection must not
-  // change this). Build the confirmed CaseState from turn-1's REAL output.
-  const caseState = buildCaseState({
-    note,
-    extractedFacts: t1.extractedFacts,
-    differential: t1.differential,
-    selectedCondition: "croup",
-    selectedGuidelineId: "starship-croup-2020",
-    selectedSeverity: "moderate",
-  });
-  // Retry the turn-2 call too: STEP-B synthesis can hit the same transient
-  // No-output miss as any other model-bearing case.
-  return withRetry(() => callTurn2(caseState));
+  // STEP B: drive the collapse→dose leg on a PINNED collapsible croup differential
+  // (the note's real differential won't collapse — see above). This proves the
+  // SECOND half of the injection defense: the routed dose is the registry value
+  // (2.13 mg), never the injected 50. Determinism comes from the pinned fixture;
+  // the live turn1 above is what actually exercised the injection text.
+  return callCollapse(CASE_COLLAPSE_CROUP, "absent");
 }
 
 // ---------------------------------------------------------------------------
@@ -212,6 +328,7 @@ class ClinicalRouteProvider {
     const vars = context?.vars ?? {};
     const kind = String(vars.kind ?? "");
     const caseId = String(vars.case_id ?? "");
+    const answer = String(vars.answer ?? "");
     const before = usageSnapshot();
 
     try {
@@ -242,6 +359,24 @@ class ClinicalRouteProvider {
           const cs = TURN2_FIXTURES[caseId];
           if (!cs) return { error: `no case6 fixture for case_id "${caseId}"` };
           output = await withRetry(() => runCase6(cs));
+          break;
+        }
+        case "collapse": {
+          if (
+            answer !== "present" &&
+            answer !== "absent" &&
+            answer !== "not_assessed"
+          ) {
+            return {
+              error: `collapse kind requires vars.answer "present"|"absent"|"not_assessed", got "${answer}"`,
+            };
+          }
+          const cs = COLLAPSE_FIXTURES[caseId];
+          if (!cs)
+            return {
+              error: `no collapse fixture for case_id "${caseId}"`,
+            };
+          output = await callCollapse(cs, answer as DiscriminatorAnswer);
           break;
         }
         default:

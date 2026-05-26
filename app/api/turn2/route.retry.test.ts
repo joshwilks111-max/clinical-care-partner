@@ -56,10 +56,26 @@ function makeCaseState(overrides: Partial<CaseState> = {}): CaseState {
       profession: null,
       setting: null,
     },
-    differential: { conditions: [], candidate_guidelines: [] },
+    // Default differential collapses to `plan` (rule 5: one treatable mapped
+    // condition, no must-not-miss) so the defense-in-depth gate passes through.
+    differential: {
+      conditions: [
+        {
+          name: "Croup",
+          likelihood: "likely",
+          positive_evidence: [],
+          negative_evidence: [],
+        },
+      ],
+      candidate_guidelines: [
+        { guideline_id: "starship-croup-2020", label: "Croup (Starship NZ)" },
+      ],
+    },
     selected_condition: "croup",
     selected_guideline_id: "starship-croup-2020",
     selected_severity: "moderate",
+    discriminating_qa: [],
+    round: 0,
     ...overrides,
   };
 }

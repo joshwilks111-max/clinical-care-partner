@@ -188,3 +188,48 @@ export const CASE6_INCOMPLETE: CaseState = caseState({
   guidelineId: "eval-croup-uncoverable-slot",
   severity: "moderate",
 });
+
+// ---------------------------------------------------------------------------
+// CASE 9 + CASE 10 — Collapse: the croup differential with Epiglottitis as a
+// must-not-miss (empty positive evidence, negative evidence present). This state
+// enters turn1.5 decide → returns "ask", then:
+//   case9: answer "absent" → demotes epiglottitis to "possible" → re-decide →
+//          "ok" (starship-croup-2020) → turn2 → dose 2.13 mg.
+//   case10: answer "present" → epiglottitis gains positive evidence → re-decide →
+//           "abstention" (no_matching_guideline). NO turn2 call.
+// ---------------------------------------------------------------------------
+export const CASE_COLLAPSE_CROUP: CaseState = buildCaseState({
+  note: "Jack T., 3yo, 14.2 kg. Barky cough, stridor at rest, age 3.",
+  extractedFacts: {
+    condition_hints: ["croup"],
+    severity: "moderate",
+    weight_kg: 14.2,
+    age: "3yo",
+    profession: null,
+    setting: null,
+  },
+  differential: {
+    conditions: [
+      {
+        name: "Croup",
+        likelihood: "likely",
+        positive_evidence: ["barky cough", "stridor at rest", "age 3"],
+        negative_evidence: ["drooling", "high fever", "toxic appearance"],
+      },
+      {
+        name: "Epiglottitis",
+        likelihood: "must-not-miss",
+        positive_evidence: [],
+        negative_evidence: ["drooling", "tripod posture", "muffled voice"],
+      },
+    ],
+    candidate_guidelines: [
+      { guideline_id: "starship-croup-2020", label: "Starship croup (NZ)" },
+    ],
+  },
+  selectedCondition: null,
+  selectedGuidelineId: null,
+  selectedSeverity: null,
+  discriminatingQa: [],
+  round: 0,
+});

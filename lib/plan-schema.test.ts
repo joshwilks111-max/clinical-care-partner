@@ -16,6 +16,7 @@ import {
 } from "./plan-schema";
 import type { DoseRefusal } from "@/tools/calculate_dose";
 import type { RefusalDecision } from "@/lib/refusal-gate";
+import { wrongGuidelineAbstention } from "@/lib/refusal-gate";
 import { getGuideline } from "@/registry/guidelines";
 
 const validRec = {
@@ -189,6 +190,18 @@ describe("fromRefusalDecision — pre-LLM / no-guideline refusal → unified Abs
     const a = fromRefusalDecision(d);
     expect(a.reason).toBe("weight_missing");
     expect(a.source).toBe("pre-llm");
+  });
+
+  it("maps a wrong_guideline refusal with source no-guideline (Decision #16)", () => {
+    // A guideline EXISTS but targets the wrong condition. It rides the SAME
+    // no-guideline source as no_matching_guideline (not a new source) while
+    // keeping its own distinct reason + copy.
+    const d = wrongGuidelineAbstention();
+    const a = fromRefusalDecision(d);
+    expect(a.kind).toBe("abstention");
+    expect(a.reason).toBe("wrong_guideline");
+    expect(a.source).toBe("no-guideline");
+    expect(a.headline).toBe(d.copy);
   });
 
   it("fails CLOSED on a null reason (defensive weight_missing, not a malformed pass)", () => {
