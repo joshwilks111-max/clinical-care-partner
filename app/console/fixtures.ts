@@ -83,21 +83,21 @@ export const DEMO_NOTES: DemoCase[] = [
   {
     id: "croup",
     group: "note",
-    label: "Croup (Jack)",
-    caption: "Jack 14.2 kg moderate croup → 2.13 mg dexamethasone.",
+    label: "Croup (14.2 kg moderate)",
+    caption: "Jack T, 14.2 kg moderate croup → 2.13 mg dexamethasone.",
     note: "Jack T, 3yo, 14.2 kg. Barky cough, stridor at rest, no cyanosis, not lethargic. ?croup.",
   },
   {
     id: "cap",
     group: "note",
-    label: "Cap (25kg severe)",
+    label: "Cap (25 kg severe)",
     caption: "25 kg severe croup → 15 mg raw → CAPPED to 12 mg.",
     note: "5yo, 25 kg. Severe croup: persistent stridor at rest, marked distress, lethargic, cyanosis.",
   },
   {
     id: "anaphylaxis",
     group: "note",
-    label: "Anaphylaxis",
+    label: "Anaphylaxis (IM adrenaline)",
     caption:
       "Adrenaline 0.01 mg/kg IM → 0.14 mL. Same harness, different drug.",
     note: "4yo, 14.2 kg. Acute urticaria, lip swelling and wheeze after peanut. Anaphylaxis.",
