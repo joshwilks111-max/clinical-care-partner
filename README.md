@@ -134,6 +134,14 @@ own note/transcript), and the **Refusal** demo needs no key at all.
   model call hangs/fails.
 - **(d) The key.** Set `ANTHROPIC_API_KEY` in `.env.local` (copy from `.env.example`, which carries
   the name only, no value). Never commit `.env.local`.
+- **(e) `vercel env pull` returns empty for sensitive vars.** If you're pulling env from this
+  project's Vercel link, `vercel env pull .env.local --environment=production` writes
+  `ANTHROPIC_API_KEY=` (empty) because the production key is marked **Encrypted** and only the
+  Vercel runtime can decrypt it — `pull` only emits the variable name. Symptoms: live calls 401 with
+  `x-api-key header is required` even though `.env.local` "has" the key. Two fixes: paste the real
+  key into `.env.local` by hand, or add a separate **Development** entry on Vercel so future pulls
+  decrypt locally (`vercel env add ANTHROPIC_API_KEY development`, then `vercel env pull
+  .env.local --environment=development`). Production stays sensitive; Development can be plaintext.
 
 ---
 
