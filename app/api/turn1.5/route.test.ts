@@ -288,7 +288,11 @@ describe("POST /api/turn1.5 — phase 'decide'", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { status?: string; reason?: string };
     expect(body.status).toBe("abstention");
-    expect(body.reason).toBe("no_matching_guideline");
+    // The more-honest reason now that abstainResponseFor picks the right copy:
+    // a treatable (Croup) exists AND a positive must-not-miss can't be ruled
+    // out → "unresolved_dangers" (not "no_matching_guideline" — guidelines
+    // exist, the data just doesn't let us safely route to them).
+    expect(body.reason).toBe("unresolved_dangers");
     // NON-VACUITY: a confirmed must-not-miss abstains BEFORE any model call.
     expect(generateTextCalls.length).toBe(0);
   });
@@ -403,7 +407,11 @@ describe("POST /api/turn1.5 — phase 'answer' (NO model call on any branch)", (
     expect(res.status).toBe(200);
     const body = (await res.json()) as { status?: string; reason?: string };
     expect(body.status).toBe("abstention");
-    expect(body.reason).toBe("no_matching_guideline");
+    // Confirming a must-not-miss flips its evidence positive — abstainResponseFor
+    // now correctly reports "unresolved_dangers" (a treatable exists; the data
+    // just confirms a danger we can't route past). Distinct from
+    // "no_matching_guideline" which means there's no treatable in the registry.
+    expect(body.reason).toBe("unresolved_dangers");
     expect(generateTextCalls.length).toBe(0);
   });
 
@@ -423,8 +431,11 @@ describe("POST /api/turn1.5 — phase 'answer' (NO model call on any branch)", (
       caseState?: CaseState;
     };
     // Identical outcome to 'present' — abstain, never an "ok" that enables dosing.
+    // not_assessed maps to present:true (fail closed), so the same
+    // "unresolved_dangers" reason fires: a danger is now positive, the data
+    // doesn't let us safely route past it.
     expect(body.status).toBe("abstention");
-    expect(body.reason).toBe("no_matching_guideline");
+    expect(body.reason).toBe("unresolved_dangers");
     expect(generateTextCalls.length).toBe(0);
   });
 

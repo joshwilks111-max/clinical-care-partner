@@ -137,6 +137,7 @@ export type AbstentionReason =
   | "weight_missing"
   | "no_matching_guideline"
   | "wrong_guideline"
+  | "unresolved_dangers"
   // from DoseRefusal (tools/calculate_dose)
   | "implausible_weight"
   | "invalid_dose_rule_id"
@@ -188,7 +189,9 @@ export function fromDoseRefusal(r: DoseRefusal): Abstention {
 export function fromRefusalDecision(d: RefusalDecision): Abstention {
   const reason = d.reason ?? "weight_missing";
   const source: AbstentionSource =
-    reason === "no_matching_guideline" || reason === "wrong_guideline"
+    reason === "no_matching_guideline" ||
+    reason === "wrong_guideline" ||
+    reason === "unresolved_dangers"
       ? "no-guideline"
       : "pre-llm";
   return {

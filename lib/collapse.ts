@@ -60,7 +60,18 @@ export const MAX_ROUNDS = 1;
 // ---------------------------------------------------------------------------
 
 function norm(s: string): string {
-  return s.toLowerCase().trim().replace(/\s+/g, " ");
+  // Strip trailing parenthetical specifiers so the model's expansive condition
+  // names match the registry's canonical short names: e.g. "Croup (viral
+  // laryngotracheobronchitis)" → "croup". The model writes the long form
+  // because the prompt asks for evidence-backed reasoning; the registry uses
+  // short canonical keys because that's how dosing guidelines are routed.
+  // Single trailing "(...)" group only — we don't try to peel nested parens.
+  return s
+    .toLowerCase()
+    .trim()
+    .replace(/\s*\([^)]*\)\s*$/, "")
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
 // ---------------------------------------------------------------------------
@@ -89,6 +100,82 @@ function isTreatableTop(
 ): boolean {
   if (c.likelihood === "must-not-miss") return false;
   return Object.prototype.hasOwnProperty.call(map, norm(c.name));
+}
+
+// ---------------------------------------------------------------------------
+// demoteSharedFindings — preprocess BEFORE decideCollapse to fix the over-abstain.
+//
+// THE PROBLEM (observed live, fixture-hidden): the LLM correctly lists a single
+// shared physical finding (e.g. "stridor at rest") under EVERY must-not-miss
+// condition the finding is consistent with. The downstream Rule 2 ("any positive
+// must-not-miss → abstain") then reads three innocuous shared mentions as three
+// CONFIRMED dangerous conditions, and abstains — even when the only positive
+// evidence on each is the same generic finding.
+//
+// THE FIX: a positive must-not-miss finding that is ALSO positive on the leading
+// treatable condition is SHARED — it does not discriminate; it cannot confirm.
+// We remove it from the must-not-miss positive arms (it stays on the treatable —
+// the treatable's case is still made). Discriminating findings (e.g. "drooling"
+// only under epiglottitis) are PRESERVED — Rule 2 still triggers on those.
+//
+// SAFETY (load-bearing): we ONLY demote when the finding appears on a TREATABLE
+// (likelihood "likely" or "possible") condition AND is in the registry map. A
+// finding that is shared across must-not-miss conditions but NOT on any treatable
+// is left alone — there's no benign explanation to anchor it to. Rule 2 keeps
+// firing in that case (correctly: multiple dangers with shared evidence and no
+// treatable hypothesis is genuinely ambiguous → fail toward stopping).
+//
+// PURE + IMMUTABLE: returns a NEW Differential; never mutates the input.
+// ---------------------------------------------------------------------------
+
+export function demoteSharedFindings(
+  d: Differential,
+  map: ConditionGuidelineMap,
+): Differential {
+  // Build the set of findings that are positive on at least one TREATABLE-AND-
+  // ROUTED condition (i.e. a likely/possible whose normalized name is a key in
+  // the map). These are the findings with a benign anchor — the ones we can
+  // safely demote from must-not-miss positives without losing information.
+  const benignAnchors = new Set<string>();
+  for (const c of d.conditions) {
+    if (isTreatableTop(c, map)) {
+      for (const f of c.positive_evidence) benignAnchors.add(f);
+    }
+  }
+
+  // If there's no treatable anchor at all, there's nothing to demote against —
+  // leave the differential untouched (Rule 2 will handle it correctly).
+  if (benignAnchors.size === 0) {
+    return {
+      conditions: [...d.conditions],
+      candidate_guidelines: d.candidate_guidelines,
+    };
+  }
+
+  const conditions = d.conditions.map((c) => {
+    if (c.likelihood !== "must-not-miss") return c;
+    const shared = c.positive_evidence.filter((f) => benignAnchors.has(f));
+    if (shared.length === 0) return c;
+    // Move shared findings from positive_evidence INTO negative_evidence with a
+    // "shared / non-discriminating" prefix so the audit trail records WHY they
+    // moved — the UI / future review can read the differential and see the
+    // demotion was intentional, not a data loss.
+    const newPositive = c.positive_evidence.filter(
+      (f) => !benignAnchors.has(f),
+    );
+    const newNegative = [
+      ...c.negative_evidence,
+      ...shared.map((f) => `[shared / non-discriminating]: ${f}`),
+    ];
+    return {
+      name: c.name,
+      likelihood: c.likelihood,
+      positive_evidence: newPositive,
+      negative_evidence: newNegative,
+    };
+  });
+
+  return { conditions, candidate_guidelines: d.candidate_guidelines };
 }
 
 // ---------------------------------------------------------------------------

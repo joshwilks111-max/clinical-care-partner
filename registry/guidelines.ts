@@ -326,7 +326,16 @@ import type { ConditionGuidelineMap } from "@/lib/collapse";
  * you MUST mirror it here.
  */
 function normCondition(s: string): string {
-  return s.toLowerCase().trim().replace(/\s+/g, " ");
+  // Mirror lib/collapse.ts norm() exactly — including the trailing
+  // parenthetical strip. The registry stores short canonical keys ("croup")
+  // but a normalized differential name like "Croup (viral laryngotracheo-
+  // bronchitis)" must hash to the same key, or routing silently fails.
+  return s
+    .toLowerCase()
+    .trim()
+    .replace(/\s*\([^)]*\)\s*$/, "")
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
 /**
