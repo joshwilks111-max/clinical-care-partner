@@ -249,8 +249,11 @@ async function callCollapse(
     // answer-ok CaseState leaves selected_* null (the dose-enabling id is on the
     // top-level guidelineId), and our fixture starts pre-confirmation. Seed the
     // three fields turn2 needs — guideline id (source of truth), condition (so the
-    // wrong-guideline audit matches), and severity (so the classifier sees it) —
-    // exactly as the live console does before POSTing to turn2.
+    // wrong-guideline audit matches), and severity (so the classifier sees it).
+    // NOTE: the eval uses a literal "croup" fallback because the fixture is
+    // CASE_COLLAPSE_CROUP and the harness doesn't have the registry available
+    // in a tree-shaken eval bundle. The live console derives condition from
+    // getGuideline(guidelineId)?.condition (see console.tsx runTurn2WithCaseState).
     const seeded: CaseState = {
       ...answered.caseState,
       selected_guideline_id:

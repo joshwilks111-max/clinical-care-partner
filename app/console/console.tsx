@@ -58,6 +58,7 @@ import type {
   DiscriminatorAnswer,
 } from "@/app/api/turn1.5/route";
 import type { CaseState } from "@/lib/case-state";
+import { getGuideline } from "@/registry/guidelines";
 
 type Busy =
   | { kind: "turn1" }
@@ -260,6 +261,14 @@ export function Console() {
       selected_guideline_id: incoming.selected_guideline_id ?? guidelineId,
       selected_severity:
         incoming.selected_severity ?? turn1Ok?.extractedFacts.severity ?? null,
+      // Seed selected_condition so turn-2's auditRoutedGuideline sees a non-empty
+      // condition. On the clinician-pick path this is already set; on the answer-ok
+      // auto-run path the server CaseState leaves it null, so we derive it from the
+      // registry (the canonical source — same string norm() will normalize).
+      selected_condition:
+        incoming.selected_condition ??
+        getGuideline(guidelineId)?.condition ??
+        null,
     };
 
     setTurn2(null);
