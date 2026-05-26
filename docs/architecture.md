@@ -107,7 +107,12 @@ flowchart TD
 3. **Collapse-abstain** — an unresolved or positive must-not-miss that can't be ruled out →
    abstain, **fail toward stopping**. Turn 1.5 is advisory only; the turn-2 defense-in-depth
    gate runs `demoteSharedFindings` + `decideCollapse` (**zero model calls**) so a raw POST
-   can't skip advisory Q&A and dose past a must-not-miss.
+   can't skip advisory Q&A and dose past a must-not-miss. **Bypassed when
+   `selected_guideline_id` is set** (v1.1.1.0+): by then the clinician has confirmed the
+   weight, engaged Turn 1.5, and explicitly clicked a guideline button — Step 2 is
+   execution, not judgment. A malicious POST that pairs a real selected id with a
+   different confirmed condition is still caught by the `wrong_guideline` audit
+   immediately after.
 4. **Cap fired** — raw dose exceeds the drug max → capped to `binding_limit`, recorded visibly
    in the trace (`raw → CAPPED`), not silently clamped.
 5. **Completeness fired** — a clinically-required output slot is missing or null → `incomplete`,
