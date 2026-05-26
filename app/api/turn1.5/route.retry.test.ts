@@ -1,25 +1,9 @@
 // app/api/turn1.5/route.retry.test.ts
 //
-// RETRY-BEHAVIOUR tests for the turn-1.5 collapse-decider route, SDK MOCKED at
-// the boundary (`ai`'s generateText). NO live calls. These prove the bounded
-// transient-only retry contract end-to-end — scoped to the ASK PHASE, the ONLY
-// phase that calls the model (decide-plan / decide-abstain / every answer arm
-// make ZERO calls, so there is nothing to retry there):
-//
-//   (a) ASK transient ONCE, then success → final status:"ask" (recovered).
-//   (b) ASK persistent transient (every attempt fails) → status:"error"
-//       (red 502) after EXACTLY the bounded attempt count — no infinite loop.
-//   (c) ASK Zod/parse failure (non-transient) → status:"error" IMMEDIATELY with
-//       ZERO retries (generateText called once).
-//   (d) ASK auth error (non-transient) → status:"error" IMMEDIATELY, ZERO retries.
-//
-// The mock queue holds, per generateText call, EITHER a structured output (to
-// resolve) OR an {throw: Error} marker (to throw) — scripting the exact
-// transient/non-transient sequence the route will see.
+// Bounded transient-only retry tests for Turn 1.5 decide (the only model phase).
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// --- SDK boundary mock: queue of {output} | {throw} actions, per call. ---
 type Action = { output: unknown } | { throw: Error };
 const actionQueue: Action[] = [];
 const generateTextCalls: unknown[] = [];
@@ -48,15 +32,13 @@ import { POST } from "./route";
 import type { CaseState } from "@/lib/case-state";
 import type { Differential } from "@/lib/schemas";
 
-// The canonical "ask" setup: croup likely (+ mapped) + epiglottitis must-not-miss
-// with ZERO positives at round 0 → decideCollapse returns "ask" → ONE model call.
 const ambiguousDifferential: Differential = {
   conditions: [
     {
       name: "Croup",
       likelihood: "likely",
-      positive_evidence: ["barky cough", "stridor at rest", "age 3"],
-      negative_evidence: ["drooling", "tripod posture", "muffled voice"],
+      positive_evidence: ["barky cough", "stridor at rest"],
+      negative_evidence: ["drooling", "tripod posture"],
     },
     {
       name: "Epiglottitis",
@@ -68,6 +50,16 @@ const ambiguousDifferential: Differential = {
   candidate_guidelines: [
     { guideline_id: "starship-croup-2020", label: "Starship croup (NZ)" },
   ],
+};
+
+const askOutput = {
+  needs_question: true,
+  target_condition: "Epiglottitis",
+  question:
+    "Is the child drooling, sitting in a tripod posture, or showing a muffled voice?",
+  recommended_condition: "Croup",
+  recommended_guideline: "starship-croup-2020",
+  rationale_summary: "One high-impact question before dosing croup.",
 };
 
 function makeCaseState(): CaseState {
@@ -82,11 +74,10 @@ function makeCaseState(): CaseState {
       setting: null,
     },
     differential: ambiguousDifferential,
-    selected_condition: "croup",
+    selected_condition: null,
     selected_guideline_id: null,
     selected_severity: "moderate",
     discriminating_qa: [],
-    round: 0,
   };
 }
 
@@ -98,12 +89,6 @@ function postDecide(): Request {
   });
 }
 
-const phrasedQuestion = {
-  question:
-    "Is the child drooling, sitting in a tripod posture, or showing a muffled voice?",
-};
-
-/** The SDK no-output transient miss (name + message both match TRANSIENT). */
 function transientError(): Error {
   const e = new Error("No output generated.");
   e.name = "AI_NoOutputGeneratedError";
@@ -115,63 +100,48 @@ beforeEach(() => {
   generateTextCalls.length = 0;
 });
 
-describe("POST /api/turn1.5 — bounded transient-only retry (ask phase)", () => {
-  it("(a) ASK transient once, then success → status 'ask' (retry recovered)", async () => {
+describe("POST /api/turn1.5 — bounded transient-only retry (decide)", () => {
+  it("transient once then success → status ask", async () => {
     actionQueue.push({ throw: transientError() });
-    actionQueue.push({ output: phrasedQuestion });
+    actionQueue.push({ output: askOutput });
 
     const res = await POST(postDecide());
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { status?: string; question?: string };
+    const body = (await res.json()) as { status?: string };
     expect(body.status).toBe("ask");
-    expect(body.question).toBe(phrasedQuestion.question);
-    // 1 transient miss + 1 successful retry = 2 calls.
     expect(generateTextCalls.length).toBe(2);
   });
 
-  it("(b) ASK persistent transient → status 'error' after EXACTLY 3 attempts (bounded)", async () => {
+  it("persistent transient → error after exactly 3 attempts", async () => {
     actionQueue.push({ throw: transientError() });
     actionQueue.push({ throw: transientError() });
     actionQueue.push({ throw: transientError() });
-    // A 4th queued action is consumed only if the route looped past the bound —
-    // its presence lets us prove no 4th call was made.
-    actionQueue.push({ output: phrasedQuestion });
+    actionQueue.push({ output: askOutput });
 
     const res = await POST(postDecide());
     expect(res.status).toBe(502);
-    const body = (await res.json()) as { status?: string };
-    expect(body.status).toBe("error");
-    // EXACTLY 3 attempts — bounded, never infinite.
     expect(generateTextCalls.length).toBe(3);
-    // The 4th action is still queued (proving no 4th call was made).
     expect(actionQueue.length).toBe(1);
   });
 
-  it("(c) ASK Zod parse failure (non-transient) → status 'error' IMMEDIATELY, ZERO retries", async () => {
-    // The model returns a malformed output → DiscriminatingQuestion.parse throws
-    // a ZodError (non-transient) → red on the first attempt, no retry.
-    actionQueue.push({ output: { not_a_question: true } });
-    // A spare success that must NOT be consumed (no retry on a parse failure).
-    actionQueue.push({ output: phrasedQuestion });
+  it("schema parse failure → error after repair attempt also fails", async () => {
+    const invalid = { needs_question: "yes" };
+    actionQueue.push({ output: invalid });
+    actionQueue.push({ output: invalid });
 
     const res = await POST(postDecide());
     expect(res.status).toBe(502);
-    const body = (await res.json()) as { status?: string };
-    expect(body.status).toBe("error");
-    // Exactly one attempt; no retry on a Zod failure.
-    expect(generateTextCalls.length).toBe(1);
-    expect(actionQueue.length).toBe(1);
+    // Initial judgment + one repair attempt (each may use transient retry).
+    expect(generateTextCalls.length).toBe(2);
+    expect(actionQueue.length).toBe(0);
   });
 
-  it("(d) ASK auth error (non-transient) → status 'error' IMMEDIATELY, ZERO retries", async () => {
-    const auth = new Error("401 Unauthorized: invalid x-api-key");
-    actionQueue.push({ throw: auth });
-    actionQueue.push({ output: phrasedQuestion }); // must not be consumed
+  it("auth error → error immediately, no retry", async () => {
+    actionQueue.push({ throw: new Error("401 Unauthorized: invalid x-api-key") });
+    actionQueue.push({ output: askOutput });
 
     const res = await POST(postDecide());
     expect(res.status).toBe(502);
-    const body = (await res.json()) as { status?: string };
-    expect(body.status).toBe("error");
     expect(generateTextCalls.length).toBe(1);
     expect(actionQueue.length).toBe(1);
   });

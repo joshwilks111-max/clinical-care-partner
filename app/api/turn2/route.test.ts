@@ -81,7 +81,6 @@ function makeCaseState(overrides: Partial<CaseState> = {}): CaseState {
     selected_guideline_id: "starship-croup-2020",
     selected_severity: "moderate",
     discriminating_qa: [],
-    round: 0,
     ...overrides,
   };
 }
@@ -559,6 +558,42 @@ describe("POST /api/turn2 — technical error (red) vs success vs incomplete (am
     expect(body.reason).toBe("no_matching_guideline");
     // NON-VACUOUS: gate fired before any model call.
     expect(generateTextCalls.length).toBe(0);
+  });
+
+  it("shared stridor on croup + epiglottitis: demote before gate → plan, dosing proceeds", async () => {
+    // Without demoteSharedFindings, Rule 2 would false-abstain on shared "stridor at rest".
+    // With demote, epiglottitis's shared copy is demoted and the gate falls through to plan.
+    outputQueue.push(moderateClassification);
+    outputQueue.push(completeCroupPlan);
+
+    const res = await POST(
+      postCaseState(
+        makeCaseState({
+          differential: {
+            conditions: [
+              {
+                name: "Epiglottitis",
+                likelihood: "must-not-miss",
+                positive_evidence: ["stridor at rest"],
+                negative_evidence: [],
+              },
+              {
+                name: "Croup",
+                likelihood: "likely",
+                positive_evidence: ["barky cough", "stridor at rest"],
+                negative_evidence: [],
+              },
+            ],
+            candidate_guidelines: [],
+          },
+          selected_guideline_id: "starship-croup-2020",
+        }),
+      ),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { status?: string };
+    expect(body.status).toBe("ok");
+    expect(generateTextCalls.length).toBe(2);
   });
 
   it("null weight in a hand-crafted CaseState → dose-tool GUARD-7 abstains (implausible_weight), STEP B never runs", async () => {

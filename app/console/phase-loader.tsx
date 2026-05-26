@@ -4,8 +4,8 @@
 // request lifecycle shows WHICH phase is running, in clinician-readable words:
 //   Turn 1 → "Building differential…"
 //   Turn 2 → "Retrieving guideline…" / "Calculating dose…" / "Checking completeness…"
+//   Turn 1.5 → "Running advisory diagnostic check…" (optional high-impact question).
 // The routes are not token-streamed, so the label is driven off the request
-// lifecycle (the console sets `phase` while awaiting). We use the Shimmer leaf
 // (AI Elements) for the moving label rather than a bare spinner.
 
 "use client";
@@ -22,10 +22,7 @@ export type Phase =
 
 const PHASE_LABEL: Record<Phase, string> = {
   "building-differential": "Building differential…",
-  // Turn 1.5 (the collapse decider): the only phase that may call the model is
-  // "ask", where it PHRASES one discriminating question. The label is honest —
-  // we are checking the must-not-miss before any guideline can be applied.
-  "checking-safety": "Checking for must-not-miss conditions…",
+  "checking-safety": "Running advisory diagnostic check…",
   "retrieving-guideline": "Retrieving guideline…",
   "calculating-dose": "Calculating dose…",
   "checking-completeness": "Checking completeness…",

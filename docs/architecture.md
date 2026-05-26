@@ -2,11 +2,11 @@
 
 One picture, one boundary. The LLM does the **judgment** (build the differential, weigh
 evidence, classify severity against the guideline's own table, phrase the discriminating
-question). Everything that could hurt a patient — deciding whether to collapse the differential,
-picking the guideline, doing the arithmetic — is **deterministic and auditable**. Between the
-differential and the dose, a server-side turn 1.5 collapse step asks one discriminating question
-to rule out a must-not-miss before dosing the treatable. The seam between judgment and execution
-is the whole design.
+question). Everything that could hurt a patient — picking the guideline, doing the
+arithmetic, abstaining from dosing — is **deterministic and auditable**. Between the
+differential and the dose, turn 1.5 is an **advisory** diagnostic check (optional Q&A);
+**collapse and dose abstention happen only at the Turn 2 defense-in-depth gate**. The
+seam between judgment and execution is the whole design.
 
 ```mermaid
 flowchart TD
@@ -26,26 +26,28 @@ flowchart TD
     PRE -- "weight present" --> EXTRACT
     EXTRACT --> STOP --> CONFIRM
 
-    %% ───────────────── TURN 1.5 · SAFETY COLLAPSE (server-side, ≤1 round) ─────────────────
-    subgraph T15["TURN 1.5 · COLLAPSE  (server-side · the deterministic core decides · MAX_ROUNDS = 1)"]
+    %% ───────────────── TURN 1.5 · ADVISORY (LLM judgment + optional Q&A) ─────────────────
+    subgraph T15["TURN 1.5 · ADVISORY  (diagnostic-completeness assist · no abstention here)"]
         direction TB
-        DECIDE{"decideCollapse(map, round)<br/>unresolved must-not-miss?<br/><i>deterministic — never the model</i>"}:::gate
-        ASK["LLM PHRASES one discriminating<br/>question (drooling / tripod / muffled?)"]:::llm
-        ANSWER["Clinician answers (yes / <b>No, absent</b>)"]:::human
-        FLIP["applyAnswer → flip evidence<br/>deterministically · re-decide at round+1"]:::det
+        DECIDE["LLM: recommend treatable condition +<br/>optional high-impact question"]:::llm
+        ASK["Clinician sees advisory question<br/>(may answer or skip)"]:::human
+        ANSWER["applyAnswer → flip evidence<br/>deterministically · logged in discriminating_qa"]:::det
+        OK["Advisory ok — no question needed"]:::human
     end
 
     CONFIRM --> DECIDE
-    DECIDE -- "unresolved must-not-miss<br/>+ 1 treatable top → <b>ask</b>" --> ASK
-    ASK --> ANSWER --> FLIP --> DECIDE
-    DECIDE -- "positive/unresolved must-not-miss<br/>can't be ruled out → <b>abstain</b>" --> RG15["ABSTAIN · fail toward stopping<br/><i>amber · don't dose past a must-not-miss</i>"]:::abstain
+    DECIDE -- "needs_question" --> ASK --> ANSWER
+    DECIDE -- "no question needed" --> OK
+    ANSWER --> SEAM
+    OK --> SEAM
 
     %% ═══════════ THE BOUNDARY ═══════════
-    DECIDE == "collapse to ONE guideline → <b>plan</b>" ==> SEAM{{"═══  judgment ends · execution begins  ═══"}}:::seam
+    SEAM{{"═══  judgment ends · execution begins  ═══"}}:::seam
 
     %% ───────────────── TURN 2 · EXECUTION (deterministic / constrained) ─────────────────
     subgraph T2["TURN 2 · EXECUTION  (deterministic / constrained — consumes confirmed CaseState, ZERO re-extraction)"]
         direction TB
+        GATE{"demoteSharedFindings + decideCollapse<br/>defense-in-depth · abstain only here"}:::gate
         ROUTER["Deterministic router<br/>(condition, profession, setting) → guideline_id<br/><i>routed id logged for audit</i>"]:::det
         NOMATCH{"row matched?<br/>+ routed id matches condition?"}:::gate
         GET["get_guideline(id)<br/>whole document + DoseRule + RequiredFields"]:::det
@@ -54,9 +56,12 @@ flowchart TD
         CAP{"raw &gt; max_mg?"}:::gate
         PLAN["LLM: synthesise plan, cite sections<br/>verbatim · <b>Zod-constrained</b>"]:::llm
         COMPLETE{"Completeness gate<br/>every RequiredField present AND non-null?<br/><i>deterministic, NO LLM judge</i>"}:::gate
+        RG15["ABSTAIN · fail toward stopping<br/><i>amber · don't dose past a must-not-miss</i>"]:::abstain
     end
 
-    SEAM ==> ROUTER --> NOMATCH
+    SEAM ==> GATE
+    GATE -- "unresolved must-not-miss → abstain" --> RG15
+    GATE -- "plan (collapsed)" --> ROUTER --> NOMATCH
     NOMATCH -- "no match / mismatch" --> RG2["ABSTAIN · no local guideline<br/><i>I won't guess</i>"]:::abstain
     NOMATCH -- "matched" --> GET --> SEV --> CALC --> CAP
     CAP -- "yes" --> CAPPED["CAPPED to binding_limit<br/><i>raw→capped in the trace</i>"]:::abstain
@@ -100,9 +105,9 @@ flowchart TD
    confirmed condition is croup). The turn-2 audit (`auditRoutedGuideline`) fires the latter
    and abstains ("no local guideline — I won't guess").
 3. **Collapse-abstain** — an unresolved or positive must-not-miss that can't be ruled out →
-   abstain, **fail toward stopping**. The turn-1.5 `decideCollapse` decides this server-side; a
-   turn-2 defense-in-depth gate re-runs the same check (**zero model calls**) so a raw POST can't
-   skip turn 1.5 and dose past a must-not-miss.
+   abstain, **fail toward stopping**. Turn 1.5 is advisory only; the turn-2 defense-in-depth
+   gate runs `demoteSharedFindings` + `decideCollapse` (**zero model calls**) so a raw POST
+   can't skip advisory Q&A and dose past a must-not-miss.
 4. **Cap fired** — raw dose exceeds the drug max → capped to `binding_limit`, recorded visibly
    in the trace (`raw → CAPPED`), not silently clamped.
 5. **Completeness fired** — a clinically-required output slot is missing or null → `incomplete`,

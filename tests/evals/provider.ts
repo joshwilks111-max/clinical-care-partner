@@ -187,7 +187,12 @@ async function callTurn1(note: string): Promise<unknown> {
 async function callTurn15(body: {
   phase: "decide" | "answer";
   caseState: CaseState;
-  answer?: DiscriminatorAnswer;
+  answer?: DiscriminatorAnswer | null;
+  target?: string;
+  question?: string;
+  recommended_condition?: string;
+  recommended_guideline?: string;
+  confidence?: "low" | "medium" | "high";
 }): Promise<unknown> {
   const req = new Request("http://localhost/api/turn1.5", {
     method: "POST",
@@ -199,28 +204,26 @@ async function callTurn15(body: {
 }
 
 /**
- * Collapse: decide phase → answer phase → turn2 (if ok) or abstention.
- *
- * Mirrors the structure + comment style of callInjection. The decide phase
- * calls the model (question phrasing) so withRetry wraps it. The answer phase
- * is deterministic code only — retry is harmless and consistent with
- * callInjection's approach of retrying turn2 too.
+ * Advisory collapse flow: decide → answer → turn2 (if recorded) or abstention at turn2 gate.
  */
 async function callCollapse(
   caseState: CaseState,
   answer: DiscriminatorAnswer,
 ): Promise<unknown> {
-  // STEP A: decide phase — the model phrases one discriminating question.
-  // We expect status:"ask" for the collapse fixture; anything else surfaces as a
-  // visible fail (wrong decide is NOT silently treated as a pass).
   const decide = (await withRetry(() =>
-    callTurn15({ phase: "decide", caseState }),
+    callTurn15({ phase: "decide", caseState, confidence: "medium" }),
   )) as
-    | { status: "ask"; caseState?: CaseState; [k: string]: unknown }
-    | { status: "ok" | "abstention" | "error"; [k: string]: unknown };
+    | {
+        status: "ask";
+        target: string;
+        question: string;
+        recommended_condition: string;
+        recommended_guideline: string;
+        [k: string]: unknown;
+      }
+    | { status: "ok" | "error"; [k: string]: unknown };
 
   if (decide.status !== "ask") {
-    // Surfaced to the eval so a wrong decide action is visible (not silently a pass).
     return {
       status: decide.status,
       _stage: "turn15-decide",
@@ -228,37 +231,36 @@ async function callCollapse(
     };
   }
 
-  // STEP B: answer phase — deterministic evidence flip + re-decide. No model
-  // call here; retry is harmless (matches callInjection's turn2 retry pattern).
   const answered = (await withRetry(() =>
-    callTurn15({ phase: "answer", caseState, answer }),
+    callTurn15({
+      phase: "answer",
+      caseState,
+      answer,
+      target: decide.target,
+      question: decide.question,
+      recommended_condition: decide.recommended_condition,
+      recommended_guideline: decide.recommended_guideline,
+    }),
   )) as
     | {
-        status: "ok";
+        status: "recorded";
         caseState: CaseState;
-        guidelineId: string;
+        recommended_condition: string;
+        recommended_guideline: string;
         [k: string]: unknown;
       }
-    | { status: "abstention" | "error"; [k: string]: unknown };
+    | { status: "error"; [k: string]: unknown };
 
-  // STEP C: if the answer collapsed to a single guideline, POST to turn2 for
-  // the dose. Otherwise return the abstention/error directly so assertions run
-  // against the turn1.5 shape (case10: must-not-miss confirmed → abstention).
-  if (answered.status === "ok" && answered.caseState) {
-    // Mirror the client handoff (console.tsx runTurn2WithCaseState): the server's
-    // answer-ok CaseState leaves selected_* null (the dose-enabling id is on the
-    // top-level guidelineId), and our fixture starts pre-confirmation. Seed the
-    // three fields turn2 needs — guideline id (source of truth), condition (so the
-    // wrong-guideline audit matches), and severity (so the classifier sees it).
-    // NOTE: the eval uses a literal "croup" fallback because the fixture is
-    // CASE_COLLAPSE_CROUP and the harness doesn't have the registry available
-    // in a tree-shaken eval bundle. The live console derives condition from
-    // getGuideline(guidelineId)?.condition (see console.tsx runTurn2WithCaseState).
+  if (answered.status === "recorded" && answered.caseState) {
     const seeded: CaseState = {
       ...answered.caseState,
       selected_guideline_id:
-        answered.caseState.selected_guideline_id ?? answered.guidelineId,
-      selected_condition: answered.caseState.selected_condition ?? "croup",
+        answered.caseState.selected_guideline_id ??
+        answered.recommended_guideline,
+      selected_condition:
+        answered.caseState.selected_condition ??
+        answered.recommended_condition ??
+        "croup",
       selected_severity:
         answered.caseState.selected_severity ??
         answered.caseState.extracted_facts.severity ??

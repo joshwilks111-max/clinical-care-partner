@@ -57,6 +57,7 @@ const validTurn1Output = {
     profession: null,
     setting: null,
   },
+  confidence: "high" as const,
   differential: {
     conditions: [
       {

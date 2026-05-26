@@ -36,3 +36,8 @@ next-env.d.ts
 /coverage/
 .vercel
 .gstack/
+
+# -------- Local tooling (not committed) --------
+.cursor/
+.codex-worktrees/
+.gbrain-source

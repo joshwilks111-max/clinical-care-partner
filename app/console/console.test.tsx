@@ -218,17 +218,12 @@ describe("Console — paste-your-own intake (Task B, free-form note/transcript)"
             });
       }
       if (url === "/api/turn1.5") {
-        // decide → plan short-circuit → ok (0 model calls). The croup demo case.
         return jsonResponse({
           status: "ok",
-          guidelineId: "starship-croup-2020",
+          recommended_condition: "Croup",
+          recommended_guideline: "starship-croup-2020",
+          rationale_summary: "No clarifying question needed.",
           caseState: FIXTURE_TURN1_SUCCESS.caseState,
-          provenance: {
-            phase: "decide",
-            action: "plan",
-            target: null,
-            round: 0,
-          },
         });
       }
       // /api/turn2 → dose ok.
@@ -296,128 +291,29 @@ describe("Console — paste-your-own intake (Task B, free-form note/transcript)"
 });
 
 // ===========================================================================
-// THE HONESTY INVARIANT — the urgent abstention copy must reflect the condition
-// the SERVER identified, never a hardcoded one. These tests drive the real
-// Console flow (turn1 → turn1.5 ask → answer not_assessed → abstention) through
-// the fetch router, varying ONLY the server's `target`, and assert the rendered
-// eyebrow/headline track it. A hardcoded "epiglottitis" string would fail the
-// non-epiglottitis-target test below — that test is the data-driven proof.
+// Advisory Turn 1.5 — high-impact question card shows server target in copy
 // ===========================================================================
 
-/** A turn1.5 "ask" wire response with the given must-not-miss target. */
-function askResponse(target: string, discriminators: string[]) {
+function askResponse(target: string) {
   return {
     status: "ask",
-    question: `Is there ${discriminators.join(" or ")}?`,
+    question: `Is there evidence of ${target.toLowerCase()}?`,
     target,
-    discriminators,
-    provenance: { phase: "decide", action: "ask", target, round: 0 },
+    discriminators: ["drooling", "tripod posture"],
+    recommended_condition: "Croup",
+    recommended_guideline: "starship-croup-2020",
+    rationale_summary: "One question before dosing.",
+    caseState: FIXTURE_TURN1_SUCCESS.caseState,
   };
 }
 
-/** The turn1.5 abstention wire shape — the MACHINE reason stays
- *  no_matching_guideline (server-side, unchanged); the headline/detail are the
- *  server fallbacks the UI uses ONLY when there was no prior ask. */
-function abstentionResponse() {
-  return {
-    status: "abstention",
-    reason: "no_matching_guideline",
-    headline:
-      "No local guideline matches this condition. I will not guess a plan from outside the registry.",
-    detail: "Only croup and anaphylaxis are in the committed registry for v1.",
-    source: "no-guideline",
-  };
-}
-
-/**
- * Render the Console and drive it through: croup demo → confirm weight →
- * turn1.5 "decide" returns the given ask → answer "not_assessed" → turn1.5
- * "answer" returns an abstention. Returns once the abstention has rendered.
- */
-async function driveToAbstentionViaAsk(
-  target: string,
-  discriminators: string[],
-) {
-  let turn15Calls = 0;
-  const fetchMock = vi.fn<typeof fetch>(async (input) => {
-    const url = String(input);
-    if (url === "/api/turn1") return jsonResponse(FIXTURE_TURN1_SUCCESS);
-    if (url === "/api/turn1.5") {
-      turn15Calls += 1;
-      // 1st turn1.5 (decide) → ask; 2nd turn1.5 (answer not_assessed) → abstain.
-      return turn15Calls === 1
-        ? jsonResponse(askResponse(target, discriminators))
-        : jsonResponse(abstentionResponse());
-    }
-    return jsonResponse(FIXTURE_TURN2_OK); // turn2 — should not be reached here.
-  });
-  vi.stubGlobal("fetch", fetchMock);
-
-  render(<Console />);
-  fireEvent.click(
-    document.querySelector('[data-demo-id="croup"]') as HTMLButtonElement,
-  );
-  await waitFor(() =>
-    expect(screen.getByTestId("turn1-view")).toBeInTheDocument(),
-  );
-  fireEvent.click(screen.getByTestId("confirm-weight-button"));
-  // The ask card appears.
-  await waitFor(() =>
-    expect(screen.getByTestId("safety-check-card")).toBeInTheDocument(),
-  );
-  // "Not assessed" → fail-closed → abstention.
-  fireEvent.click(
-    document.querySelector('[data-answer="not_assessed"]') as HTMLButtonElement,
-  );
-  await waitFor(() =>
-    expect(screen.getByTestId("turn15-abstention")).toBeInTheDocument(),
-  );
-}
-
-describe("Console — turn-1.5 abstention copy is data-driven (the honesty invariant)", () => {
-  it("renders the ACTUAL identified target (epiglottitis) in the urgent copy", async () => {
-    await driveToAbstentionViaAsk("Epiglottitis", [
-      "drooling",
-      "tripod posture",
-      "muffled voice",
-    ]);
-    const block = screen.getByTestId("turn15-abstention");
-    // Eyebrow + headline name the server-identified condition.
-    expect(screen.getByTestId("turn15-abstention-alert")).toHaveTextContent(
-      "SUSPECTED EPIGLOTTITIS",
-    );
-    expect(block).toHaveTextContent(/possible epiglottitis/i);
-    // The discriminators the server sent drive the rationale line.
-    expect(block).toHaveTextContent(
-      /drooling \/ tripod posture \/ muffled voice/,
-    );
-  });
-
-  it("renders a DIFFERENT identified target (bacterial tracheitis), NOT a hardcoded epiglottitis — the data-driven proof", async () => {
-    // THE PROOF: the only reachable demo abstention happens to be croup/
-    // epiglottitis, so a hardcoded string passes on camera. Here the SERVER
-    // identifies a different must-not-miss — the UI MUST follow it.
-    await driveToAbstentionViaAsk("Bacterial tracheitis", [
-      "high fever",
-      "toxic appearance",
-    ]);
-    const block = screen.getByTestId("turn15-abstention");
-    expect(screen.getByTestId("turn15-abstention-alert")).toHaveTextContent(
-      "SUSPECTED BACTERIAL TRACHEITIS",
-    );
-    expect(block).toHaveTextContent(/possible bacterial tracheitis/i);
-    expect(block).toHaveTextContent(/high fever \/ toxic appearance/);
-    // It must NOT have invented the old hardcoded condition.
-    expect(block).not.toHaveTextContent(/epiglottitis/i);
-  });
-
-  it("falls back to the SERVER headline/detail when there was NO prior ask (lastAsk null)", async () => {
-    // A decide-phase abstention with no ask first → lastAsk stays null → the
-    // component renders the server's own copy, never a hardcoded condition.
+describe("Console — turn-1.5 ask copy is data-driven", () => {
+  it("renders the server-identified target in the high-impact eyebrow", async () => {
     const fetchMock = vi.fn<typeof fetch>(async (input) => {
       const url = String(input);
       if (url === "/api/turn1") return jsonResponse(FIXTURE_TURN1_SUCCESS);
-      if (url === "/api/turn1.5") return jsonResponse(abstentionResponse());
+      if (url === "/api/turn1.5")
+        return jsonResponse(askResponse("Epiglottitis"));
       return jsonResponse(FIXTURE_TURN2_OK);
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -431,51 +327,31 @@ describe("Console — turn-1.5 abstention copy is data-driven (the honesty invar
     );
     fireEvent.click(screen.getByTestId("confirm-weight-button"));
     await waitFor(() =>
-      expect(screen.getByTestId("turn15-abstention")).toBeInTheDocument(),
+      expect(screen.getByTestId("high-impact-question-card")).toBeInTheDocument(),
     );
-    const block = screen.getByTestId("turn15-abstention");
-    // The honest fallback: the SERVER's headline + detail, no fabricated condition.
-    expect(block).toHaveTextContent(
-      /No local guideline matches this condition/,
+    expect(screen.getByTestId("high-impact-eyebrow")).toHaveTextContent(
+      /EPIGLOTTITIS/,
     );
-    expect(block).toHaveTextContent(
-      /Only croup and anaphylaxis are in the committed registry/,
-    );
-    // No "SUSPECTED <X>" claim and no invented condition name.
-    expect(block).not.toHaveTextContent(/SUSPECTED/);
-    expect(block).not.toHaveTextContent(/epiglottitis/i);
   });
 });
 
-describe("Console — must-not-miss CLEARED banner is data-driven", () => {
-  it("templates the ruled-out condition NAME from the identified target", async () => {
-    // Drive: croup → confirm → ask (Epiglottitis) → answer "absent" →
-    // answer-ok (the must-not-miss cleared) → the cleared banner + Turn 2.
+describe("Console — answer recorded does not auto-run Turn 2", () => {
+  it("records answer then waits for clinician guideline click", async () => {
     let turn15Calls = 0;
-    const fetchMock = vi.fn<typeof fetch>(async (input) => {
+    const fetchMock = vi.fn<typeof fetch>(async (input, init) => {
       const url = String(input);
       if (url === "/api/turn1") return jsonResponse(FIXTURE_TURN1_SUCCESS);
       if (url === "/api/turn1.5") {
         turn15Calls += 1;
-        if (turn15Calls === 1) {
-          return jsonResponse(
-            askResponse("Epiglottitis", ["drooling", "tripod posture"]),
-          );
-        }
-        // answer "absent" cleared the must-not-miss → answer-ok.
+        if (turn15Calls === 1) return jsonResponse(askResponse("Epiglottitis"));
         return jsonResponse({
-          status: "ok",
-          guidelineId: "starship-croup-2020",
+          status: "recorded",
+          recommended_condition: "Croup",
+          recommended_guideline: "starship-croup-2020",
           caseState: FIXTURE_TURN1_SUCCESS.caseState,
-          provenance: {
-            phase: "answer",
-            action: "plan",
-            target: null,
-            round: 1,
-          },
         });
       }
-      return jsonResponse(FIXTURE_TURN2_OK); // auto-run Turn 2 after clear.
+      return jsonResponse(FIXTURE_TURN2_OK);
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -488,37 +364,17 @@ describe("Console — must-not-miss CLEARED banner is data-driven", () => {
     );
     fireEvent.click(screen.getByTestId("confirm-weight-button"));
     await waitFor(() =>
-      expect(screen.getByTestId("safety-check-card")).toBeInTheDocument(),
+      expect(screen.getByTestId("high-impact-question-card")).toBeInTheDocument(),
     );
     fireEvent.click(
       document.querySelector('[data-answer="absent"]') as HTMLButtonElement,
     );
     await waitFor(() =>
-      expect(screen.getByTestId("turn15-cleared")).toBeInTheDocument(),
+      expect(screen.getByTestId("turn15-recorded")).toBeInTheDocument(),
     );
-    // The cleared banner names the EXACT condition that was ruled out.
-    expect(screen.getByTestId("turn15-cleared")).toHaveTextContent(
-      /Epiglottitis ruled out/,
-    );
-
-    // Regression guard for the answer-ok selected_condition seeding bug: the
-    // turn2 POST body must carry selected_condition:"croup" (derived from the
-    // registry via getGuideline("starship-croup-2020")?.condition). Without this,
-    // turn2's auditRoutedGuideline sees "" ≠ "croup" and returns wrong_guideline.
-    await waitFor(() =>
-      expect(screen.getByTestId("turn2-ok")).toBeInTheDocument(),
-    );
-    const turn2Calls = fetchMock.mock.calls.filter(
-      ([url]) => String(url) === "/api/turn2",
-    );
-    expect(turn2Calls).toHaveLength(1);
-    const turn2Body = JSON.parse(
-      (turn2Calls[0][1] as RequestInit).body as string,
-    ) as { caseState: Record<string, unknown> };
-    expect(turn2Body.caseState.selected_condition).toBe("croup");
-    expect(turn2Body.caseState.selected_guideline_id).toBe(
-      "starship-croup-2020",
-    );
+    expect(
+      fetchMock.mock.calls.filter(([u]) => String(u) === "/api/turn2"),
+    ).toHaveLength(0);
   });
 });
 

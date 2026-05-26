@@ -8,7 +8,7 @@ Blast radius = a take-home demo, not a deployed clinical system. None is in v1 s
 | # | Delivered item | Status |
 |---|---|---|
 | 1 | **Wrong-guideline auto-abstain guard** | **DONE** — both halves: the audit (routed `guideline_id` matches confirmed condition) AND the auto-abstain behaviour, with a distinct `wrong_guideline` reason (separate from `no_matching_guideline`). |
-| 4 | **Differential-collapse loop** (ambiguous note → discriminating question → narrow dx) | **DONE** — server-side turn 1.5, one round (`MAX_ROUNDS = 1`): `decideCollapse` ask/plan/abstain, `applyAnswer` flips evidence deterministically, model only phrases the question. Eval case9 (rule-out→dose 2.13) + case10 (must-not-miss-confirmed→abstain). |
+| 4 | **Differential-collapse loop** (ambiguous note → discriminating question → narrow dx) | **DONE (advisory rewrite)** — Turn 1.5 is diagnostic-completeness assist (`ask`/`ok`/`recorded`/`error`; no Turn 1.5 abstention). Model recommends one high-impact question + treatable guideline pair; `applyAnswer` still flips evidence on answer/skip. Turn 2 alone abstains when must-not-miss persists (`collapseRoundForGate`). Eval case9 (rule-out→dose 2.13) + case10 (must-not-miss confirmed→Turn 2 abstain). `decideCollapse` retained in `lib/collapse.ts` for Turn 2 defense-in-depth only. |
 
 ## Still deferred (with build triggers)
 

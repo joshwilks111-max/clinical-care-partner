@@ -19,6 +19,7 @@
 // registry, not this file.
 
 import type { Differential, DifferentialCondition } from "@/lib/schemas";
+import { normConditionKey } from "@/lib/condition-key";
 
 // ---------------------------------------------------------------------------
 // Public decision shape.
@@ -60,18 +61,7 @@ export const MAX_ROUNDS = 1;
 // ---------------------------------------------------------------------------
 
 function norm(s: string): string {
-  // Strip trailing parenthetical specifiers so the model's expansive condition
-  // names match the registry's canonical short names: e.g. "Croup (viral
-  // laryngotracheobronchitis)" → "croup". The model writes the long form
-  // because the prompt asks for evidence-backed reasoning; the registry uses
-  // short canonical keys because that's how dosing guidelines are routed.
-  // Single trailing "(...)" group only — we don't try to peel nested parens.
-  return s
-    .toLowerCase()
-    .trim()
-    .replace(/\s*\([^)]*\)\s*$/, "")
-    .trim()
-    .replace(/\s+/g, " ");
+  return normConditionKey(s);
 }
 
 // ---------------------------------------------------------------------------

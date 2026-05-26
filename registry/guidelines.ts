@@ -316,27 +316,7 @@ export const ROUTING_TABLE: ReadonlyArray<{
 // ---------------------------------------------------------------------------
 
 import type { ConditionGuidelineMap } from "@/lib/collapse";
-
-/**
- * Normalization CONTRACT: identical to lib/collapse's private norm() —
- * lowercase + trim + internal-whitespace-collapse. A 3-token duplicate with
- * this comment is intentional: collapse.ts's norm() is private by design;
- * duplicating 3 tokens is safer than coupling two independent modules via an
- * export. The contract is the comment — if you change norm() in collapse.ts
- * you MUST mirror it here.
- */
-function normCondition(s: string): string {
-  // Mirror lib/collapse.ts norm() exactly — including the trailing
-  // parenthetical strip. The registry stores short canonical keys ("croup")
-  // but a normalized differential name like "Croup (viral laryngotracheo-
-  // bronchitis)" must hash to the same key, or routing silently fails.
-  return s
-    .toLowerCase()
-    .trim()
-    .replace(/\s*\([^)]*\)\s*$/, "")
-    .trim()
-    .replace(/\s+/g, " ");
-}
+import { normConditionKey } from "@/lib/condition-key";
 
 /**
  * Build the NORMALIZED condition-name → guideline_id map that decideCollapse
@@ -349,12 +329,56 @@ function normCondition(s: string): string {
 export function buildConditionGuidelineMap(): ConditionGuidelineMap {
   const map: ConditionGuidelineMap = {};
   for (const row of ROUTING_TABLE) {
-    map[normCondition(row.condition)] = row.guideline_id;
+    map[normConditionKey(row.condition)] = row.guideline_id;
   }
   return map;
 }
 
 /** Convenience: the guideline_id for a (raw, un-normalized) condition, or null. */
 export function getGuidelineIdForCondition(condition: string): string | null {
-  return buildConditionGuidelineMap()[normCondition(condition)] ?? null;
+  return buildConditionGuidelineMap()[normConditionKey(condition)] ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Condition metadata — Turn 1.5 advisory schema + post-parse pair-check.
+// ---------------------------------------------------------------------------
+
+/** Registry-backed metadata for a canonical condition key (normalized). */
+export type ConditionMeta = {
+  condition: string;
+  mustNotMiss: boolean;
+  discriminators: string[];
+  applicable_guidelines: string[];
+};
+
+/** Single source of truth for condition-level routing metadata. */
+export const CONDITION_META: Record<string, ConditionMeta> = {
+  croup: {
+    condition: "croup",
+    mustNotMiss: false,
+    discriminators: [],
+    applicable_guidelines: ["starship-croup-2020"],
+  },
+  anaphylaxis: {
+    condition: "anaphylaxis",
+    mustNotMiss: false,
+    discriminators: [],
+    applicable_guidelines: ["ascia-anaphylaxis-2024"],
+  },
+  epiglottitis: {
+    condition: "epiglottitis",
+    mustNotMiss: true,
+    discriminators: ["drooling", "tripod posture", "muffled voice"],
+    applicable_guidelines: [],
+  },
+};
+
+/** Lookup metadata for a raw differential condition name (normalized). */
+export function getConditionMeta(condition: string): ConditionMeta | null {
+  return CONDITION_META[normConditionKey(condition)] ?? null;
+}
+
+/** All registry guideline ids (for Zod enum construction). */
+export function allGuidelineIds(): string[] {
+  return Object.keys(GUIDELINES);
 }
