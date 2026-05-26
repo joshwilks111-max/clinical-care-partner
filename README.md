@@ -363,10 +363,11 @@ The next-sharpest genuinely-deferred beats:
 ├── registry/            # committed, version-pinned guidelines + DoseRule / RequiredFields
 │   └── guidelines.ts         # the single source of truth; LLM picks a rule by id, never sets numbers
 ├── tools/               # calculate_dose + GUARDs (deterministic; the safety spine)
-├── lib/                 # router, refusal gate, completeness gate, CaseState, plan schema, retry
-├── prompts/             # differential (turn 1) + apply (turn 2) prompts
+├── lib/                 # router, refusal gate, completeness gate, CaseState, plan schema, retry, condition-key
+├── prompts/             # turn 1 differential · turn 1.5 advisory (+ sanitizer, rewrite artefacts) · turn 2 apply
+├── scripts/             # dev utilities: draft-turn15-trace, measure-prompt-tokens
 ├── app/                 # Next.js App Router
-│   ├── api/turn1/ + api/turn1.5/ + api/turn2/   # judgment / collapse / execution handlers (runtime=nodejs)
+│   ├── api/turn1/ + api/turn1.5/ + api/turn2/   # judgment / advisory-collapse / execution handlers (runtime=nodejs)
 │   └── console/              # the structured two-panel care-partner console (not a chatbot)
 ├── components/          # shadcn/ui base + AI Elements leaf components (Tool, Sources, InlineCitation)
 ├── tests/evals/         # Promptfoo suite (10 cases: 6 demo + injection + no-guideline + 2 collapse) + sample-output.txt + LLM-judge hook
