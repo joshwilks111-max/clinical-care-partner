@@ -522,12 +522,13 @@ describe("POST /api/turn2 — technical error (red) vs success vs incomplete (am
     expect(body.dose?.dose_mg).not.toBe(50);
   });
 
-  it("defense-in-depth: hand-crafted POST with unresolved must-not-miss abstains with 0 model calls", async () => {
+  it("defense-in-depth: hand-crafted POST WITHOUT selected_guideline_id and unresolved must-not-miss abstains with 0 model calls", async () => {
     // Collapse rule 2: a must-not-miss WITH positive evidence → abstain.
-    // The clinician's selected_guideline_id is the real croup id, so the
-    // existing guideline-selection checks would pass — but the gate fires FIRST,
-    // before ANY model call. This proves the gate isn't client-only: you cannot
-    // skip turn1.5 and dose past a dangerous must-not-miss via a raw POST.
+    // The defense-in-depth claim is scoped to RAW POSTs that skip the UI's
+    // judgment-step entirely — i.e. no clicked guideline. With
+    // `selected_guideline_id: null` the gate fires FIRST, before any model
+    // call. The "selected_guideline_id is set" path is covered by the
+    // bypass test below (it's the human-confirmed-handoff branch).
     // outputQueue is intentionally empty: if the gate were removed the route
     // would call generateText with an empty queue and this test would throw,
     // which is the non-vacuous proof the gate fired.
@@ -545,7 +546,11 @@ describe("POST /api/turn2 — technical error (red) vs success vs incomplete (am
             ],
             candidate_guidelines: [],
           },
-          selected_guideline_id: "starship-croup-2020",
+          // Genuine hand-crafted bypass: NO selected_guideline_id.
+          // selected_condition must also be cleared so the deterministic
+          // router doesn't recover the croup guideline before the gate fires.
+          selected_condition: null,
+          selected_guideline_id: null,
         }),
       ),
     );
@@ -563,6 +568,54 @@ describe("POST /api/turn2 — technical error (red) vs success vs incomplete (am
     expect(generateTextCalls.length).toBe(0);
   });
 
+  it("Step-2 click is the judgment handoff: selected_guideline_id present → collapse gate is SKIPPED even with unresolved must-not-miss", async () => {
+    // Bug fix (2026-05-27): the defense-in-depth collapse gate was firing in
+    // Step 2 AFTER the clinician clicked "Apply croup" — surfacing the
+    // "Multiple dangerous conditions remain on the differential..." amber
+    // banner inside the deterministic/constrained Apply step. By that point
+    // the clinician has confirmed the weight, engaged with Turn 1.5, and
+    // explicitly selected a guideline. Step 2 is execution, not judgment;
+    // the gate must defer to the human handoff signalled by
+    // `selected_guideline_id`. The wrong-guideline audit below still catches
+    // a malicious POST that pairs a selected id with a different condition.
+    //
+    // Same differential as the test above (would have abstained on
+    // "unresolved_dangers"). With selected_guideline_id set the gate is
+    // SKIPPED and the route proceeds to the model calls + the deterministic
+    // tool. Both model calls must run for the dose to be produced.
+    outputQueue.push(moderateClassification);
+    outputQueue.push(completeCroupPlan);
+    const res = await POST(
+      postCaseState(
+        makeCaseState({
+          differential: {
+            conditions: [
+              {
+                name: "Epiglottitis",
+                likelihood: "must-not-miss",
+                positive_evidence: ["drooling", "tripod posture"],
+                negative_evidence: [],
+              },
+            ],
+            candidate_guidelines: [],
+          },
+          selected_condition: "croup",
+          selected_guideline_id: "starship-croup-2020",
+        }),
+      ),
+    );
+    const body = (await res.json()) as {
+      status?: string;
+      dose?: { dose_mg?: number };
+    };
+    // Critical: NOT an abstention. The Step-2 click overrides the gate.
+    expect(body.status).toBe("ok");
+    expect(body.dose?.dose_mg).toBe(2.13);
+    // NON-VACUOUS: both model calls happened — proves the gate fell through
+    // (not the unrelated "no model calls" property of an abstain path).
+    expect(generateTextCalls.length).toBe(2);
+  });
+
   // F-016D regression: when the abstain reason IS a registry miss (empty
   // differential, multiple treatables with no clear leader), the gate
   // returns reason="no_matching_guideline" — distinct from the
@@ -570,7 +623,14 @@ describe("POST /api/turn2 — technical error (red) vs success vs incomplete (am
   // copy variant based on the decider's reason.
   // Found by /qa on 2026-05-27.
   // Report: .gstack/qa-reports/qa-report-localhost-2026-05-27.md
-  it("F-016D: empty differential → abstention with reason=no_matching_guideline", async () => {
+  //
+  // 2026-05-27 update: the gate now bypasses when selected_guideline_id is
+  // set (Step-2-click is the judgment handoff). To keep this regression on
+  // the gate's reason-routing, we use the hand-crafted-bypass shape:
+  // selected_guideline_id null, selected_condition null. Without a guideline
+  // id the route falls through to the gate; with an empty differential the
+  // gate fires under Rule 1 (no_treatable).
+  it("F-016D: empty differential (hand-crafted POST, no clicked guideline) → abstention with reason=no_matching_guideline", async () => {
     const res = await POST(
       postCaseState(
         makeCaseState({
@@ -578,7 +638,8 @@ describe("POST /api/turn2 — technical error (red) vs success vs incomplete (am
             conditions: [],
             candidate_guidelines: [],
           },
-          selected_guideline_id: "starship-croup-2020",
+          selected_condition: null,
+          selected_guideline_id: null,
         }),
       ),
     );
@@ -600,7 +661,13 @@ describe("POST /api/turn2 — technical error (red) vs success vs incomplete (am
   // includes such conditions in the differential).
   // Found by /qa on 2026-05-27.
   // Report: .gstack/qa-reports/qa-report-localhost-2026-05-27.md
-  it("F-018a: unaskable unresolved must-not-miss does NOT block — gate falls through to dose", async () => {
+  //
+  // 2026-05-27 — additional layer: with the Step-2-click bypass,
+  // selected_guideline_id is set in this scenario so the gate is SKIPPED
+  // outright. The F-018a behavior (dose proceeds) is preserved either way;
+  // this test now also acts as a smoke-test of the bypass under a realistic
+  // demo-flow differential.
+  it("F-018a: unaskable unresolved must-not-miss does NOT block — Step-2 click bypasses the gate, dose proceeds", async () => {
     outputQueue.push(moderateClassification);
     outputQueue.push(completeCroupPlan);
     const res = await POST(
@@ -639,9 +706,15 @@ describe("POST /api/turn2 — technical error (red) vs success vs incomplete (am
     expect(generateTextCalls.length).toBe(2);
   });
 
-  it("shared stridor on croup + epiglottitis: demote before gate → plan, dosing proceeds", async () => {
+  it("shared stridor on croup + epiglottitis (hand-crafted, no selected_guideline_id): demote before gate → plan, dosing proceeds", async () => {
     // Without demoteSharedFindings, Rule 2 would false-abstain on shared "stridor at rest".
     // With demote, epiglottitis's shared copy is demoted and the gate falls through to plan.
+    //
+    // We exercise the GATE path (not the bypass) by leaving selected_guideline_id
+    // null — the route then runs decideCollapse, which is exactly what
+    // demoteSharedFindings is preprocessing. selected_condition is left as
+    // "croup" so the deterministic router can still pick the croup guideline
+    // after the gate falls through.
     outputQueue.push(moderateClassification);
     outputQueue.push(completeCroupPlan);
 
@@ -665,7 +738,7 @@ describe("POST /api/turn2 — technical error (red) vs success vs incomplete (am
             ],
             candidate_guidelines: [],
           },
-          selected_guideline_id: "starship-croup-2020",
+          selected_guideline_id: null,
         }),
       ),
     );

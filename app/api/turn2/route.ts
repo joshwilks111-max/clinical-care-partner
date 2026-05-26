@@ -223,11 +223,24 @@ export async function POST(req: Request): Promise<Response> {
   // miss. We demote shared findings (Rule-2 over-abstain fix) then run
   // decideCollapse with the SAME map builder as the collapse core.
   //
+  // BYPASS WHEN `selected_guideline_id` IS SET (the "Apply X" click).
+  //   Rationale: by Step 2 the clinician has (a) confirmed the weight, (b)
+  //   engaged with Turn 1.5 (answered, "ok", or explicit skip), and (c) clicked
+  //   a specific guideline button. That click is the explicit human handoff to
+  //   the deterministic apply step — "judgment up, execution down" (DESIGN.md).
+  //   Re-running an abstain rule here second-guesses the clinician and surfaces
+  //   the wrong amber state ("Multiple dangerous conditions remain on the
+  //   differential...") AFTER they have already made a decision. The defense-
+  //   in-depth claim against a hand-crafted POST is preserved: a POST without
+  //   selected_guideline_id still hits the gate. The wrong-guideline audit
+  //   (auditRoutedGuideline, below) continues to catch a malicious POST that
+  //   sets selected_guideline_id to a guideline for a different condition.
+  //
   // Engaged advisory Q&A sets gateRound via collapseRoundForGate (round 1).
   // Gate fires ONLY on `abstain` — ask and plan fall through. If it fires: ZERO
   // model calls, amber abstention.
   // ===================================================================
-  {
+  if (!caseState.selected_guideline_id) {
     const collapseMap = buildConditionGuidelineMap();
     // F-018 — the askable set encodes which conditions Turn 1.5 could ask about
     // (i.e. those with registry discriminators). The gate uses it to ignore
