@@ -18,7 +18,11 @@
 // turn 2 does not currently compare the hash, it only string-validates its shape.
 
 import { createHash } from "node:crypto";
-import type { ExtractedFacts, Differential, DiscriminatorAnswer } from "@/lib/schemas";
+import type {
+  ExtractedFacts,
+  Differential,
+  DiscriminatorAnswer,
+} from "@/lib/schemas";
 
 const DISCRIMINATOR_ANSWERS: readonly DiscriminatorAnswer[] = [
   "present",
@@ -59,7 +63,18 @@ export type CaseState = {
   selected_guideline_id: string | null;
   /** Clinician-confirmed severity row (null until confirmed). */
   selected_severity: string | null;
-  /** Advisory discriminating Q&A from Turn 1.5. SERVER-OWNED — only turn1.5 appends. */
+  /**
+   * Advisory discriminating Q&A from Turn 1.5.
+   *
+   * CONVENTION (not enforced at the wire): Turn 1.5's answer phase is the only
+   * code path that appends; Turn 2 reads but never mutates. The wire validator
+   * accepts client-supplied entries (necessary so Turn 2 can resume mid-flow
+   * after a page reload). A forged entry cannot dose past safety: Rule 2
+   * (positive must-not-miss) abstains regardless of audit-trail state, and
+   * Turn 2's wrong-guideline audit checks the clinician-confirmed condition
+   * against the routed guideline. The forged-entry attack surface is purely
+   * audit-trail cosmetic.
+   */
   discriminating_qa: DiscriminatingQaEntry[];
 };
 

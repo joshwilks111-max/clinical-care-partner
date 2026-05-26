@@ -68,6 +68,12 @@ export function useTurn15Flow(
 
   async function runDecide(confidence: "low" | "medium" | "high" = "medium") {
     if (!turn1Ok) return;
+    // F-014 sibling — busy-guard. Without this, a tight double-click (within
+    // the same render cycle, before turn15Busy disables the trigger button)
+    // would fire two runDecide calls; the second's setTurn15(null) corrupts
+    // the first's pending result. The card's disabled={busy} guard handles
+    // the common case; this catches the React-batching window.
+    if (turn15Busy) return;
     setTurn15(null);
     setTurn15Busy({ kind: "turn15", phase: "checking-safety" });
     try {

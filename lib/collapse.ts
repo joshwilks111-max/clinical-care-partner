@@ -295,6 +295,12 @@ export function decideCollapse(
   // evidence is confirmed-enough to be terminal. NEVER plan or ask past it.
   // A guideline may exist for the treatable — the abstain is about the danger,
   // not the registry — so reason = unresolved_dangers.
+  //
+  // INTENTIONAL: Rule 2 does NOT consult the askable set (Rule 3a does).
+  // A positive must-not-miss means "we have evidence this danger IS present"
+  // — even when we can't ask about it (no registry discriminators), we
+  // refuse to dose past it. This is the load-bearing "danger present"
+  // check and the F-018 softening explicitly leaves it alone.
   if (d.conditions.some(isPositiveMustNotMiss)) {
     return { action: "abstain", reason: "unresolved_dangers" };
   }
