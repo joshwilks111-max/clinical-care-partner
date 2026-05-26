@@ -500,6 +500,25 @@ describe("Console — must-not-miss CLEARED banner is data-driven", () => {
     expect(screen.getByTestId("turn15-cleared")).toHaveTextContent(
       /Epiglottitis ruled out/,
     );
+
+    // Regression guard for the answer-ok selected_condition seeding bug: the
+    // turn2 POST body must carry selected_condition:"croup" (derived from the
+    // registry via getGuideline("starship-croup-2020")?.condition). Without this,
+    // turn2's auditRoutedGuideline sees "" ≠ "croup" and returns wrong_guideline.
+    await waitFor(() =>
+      expect(screen.getByTestId("turn2-ok")).toBeInTheDocument(),
+    );
+    const turn2Calls = fetchMock.mock.calls.filter(
+      ([url]) => String(url) === "/api/turn2",
+    );
+    expect(turn2Calls).toHaveLength(1);
+    const turn2Body = JSON.parse(
+      (turn2Calls[0][1] as RequestInit).body as string,
+    ) as { caseState: Record<string, unknown> };
+    expect(turn2Body.caseState.selected_condition).toBe("croup");
+    expect(turn2Body.caseState.selected_guideline_id).toBe(
+      "starship-croup-2020",
+    );
   });
 });
 
