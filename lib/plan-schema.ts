@@ -202,3 +202,31 @@ export function fromRefusalDecision(d: RefusalDecision): Abstention {
     source,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Shared HTTP response adapter — used by both turn1.5 and turn2 routes.
+// ---------------------------------------------------------------------------
+
+/**
+ * The wire shape every route returns for a deliberate abstention. Defined once
+ * here (alongside Abstention) so turn1.5/route.ts and turn2/route.ts don't each
+ * redeclare an identical type and function.
+ */
+export type AbstentionResponse = { status: "abstention" } & Omit<
+  Abstention,
+  "kind"
+>;
+
+/**
+ * Map a unified Abstention onto the HTTP response shape (drops `kind`).
+ * Shared by turn1.5 and turn2 — the only place this mapping lives.
+ */
+export function toAbstentionResponse(a: Abstention): AbstentionResponse {
+  return {
+    status: "abstention",
+    reason: a.reason,
+    headline: a.headline,
+    detail: a.detail,
+    source: a.source,
+  };
+}

@@ -60,7 +60,8 @@ import {
   buildPlanOutputSchema,
   fromDoseRefusal,
   fromRefusalDecision,
-  type Abstention,
+  toAbstentionResponse,
+  type AbstentionResponse,
   type PlanOutput as PlanOutputType,
 } from "@/lib/plan-schema";
 import {
@@ -115,11 +116,6 @@ export type SuccessResponse = {
   provenance: Provenance;
 };
 
-export type AbstentionResponse = { status: "abstention" } & Omit<
-  Abstention,
-  "kind"
->;
-
 // Renders amber like an abstention, but is a DISTINCT status: a plan EXISTS and
 // is returned to show with the missing field(s) flagged (not a deliberate refusal).
 export type IncompleteResponse = {
@@ -149,17 +145,6 @@ export type Turn2Response =
 // ---------------------------------------------------------------------------
 // Helpers.
 // ---------------------------------------------------------------------------
-
-/** Map a unified Abstention onto the HTTP response shape (drops `kind`). */
-function abstentionResponse(a: Abstention): AbstentionResponse {
-  return {
-    status: "abstention",
-    reason: a.reason,
-    headline: a.headline,
-    detail: a.detail,
-    source: a.source,
-  };
-}
 
 /**
  * FIX 3 (ADV-4) — normalise a string for quote-verification substring matching:
@@ -244,7 +229,7 @@ export async function POST(req: Request): Promise<Response> {
         `[turn2:gate] defense-in-depth collapse gate fired: action=abstain, round=${caseState.round} — returning abstention, ZERO model calls`,
       );
       return NextResponse.json(
-        abstentionResponse(fromRefusalDecision(noGuidelineAbstention())),
+        toAbstentionResponse(fromRefusalDecision(noGuidelineAbstention())),
       );
     }
   }
@@ -287,7 +272,7 @@ export async function POST(req: Request): Promise<Response> {
   // No guideline determined → abstain "no local guideline" (distinct copy).
   if (routedId === null) {
     return NextResponse.json(
-      abstentionResponse(fromRefusalDecision(noGuidelineAbstention())),
+      toAbstentionResponse(fromRefusalDecision(noGuidelineAbstention())),
     );
   }
 
@@ -300,7 +285,7 @@ export async function POST(req: Request): Promise<Response> {
   // confirmed condition.
   if (!auditRoutedGuideline(condition, routedId)) {
     return NextResponse.json(
-      abstentionResponse(fromRefusalDecision(wrongGuidelineAbstention())),
+      toAbstentionResponse(fromRefusalDecision(wrongGuidelineAbstention())),
     );
   }
 
@@ -311,7 +296,7 @@ export async function POST(req: Request): Promise<Response> {
   const guideline = getGuideline(routedId);
   if (guideline === null) {
     return NextResponse.json(
-      abstentionResponse(fromRefusalDecision(noGuidelineAbstention())),
+      toAbstentionResponse(fromRefusalDecision(noGuidelineAbstention())),
     );
   }
 
@@ -379,7 +364,7 @@ export async function POST(req: Request): Promise<Response> {
     weight,
   );
   if (isRefusal(doseResult)) {
-    return NextResponse.json(abstentionResponse(fromDoseRefusal(doseResult)));
+    return NextResponse.json(toAbstentionResponse(fromDoseRefusal(doseResult)));
   }
 
   const provenance: Provenance = {

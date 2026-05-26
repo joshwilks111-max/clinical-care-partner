@@ -64,7 +64,12 @@ import {
 import { buildConditionGuidelineMap } from "@/registry/guidelines";
 import { noGuidelineAbstention } from "@/lib/refusal-gate";
 import { withTransientRetry } from "@/lib/retry";
-import { fromRefusalDecision, type Abstention } from "@/lib/plan-schema";
+import {
+  fromRefusalDecision,
+  toAbstentionResponse,
+  type Abstention,
+  type AbstentionResponse,
+} from "@/lib/plan-schema";
 import {
   DiscriminatingQuestion,
   buildQuestionSystemPrompt,
@@ -181,12 +186,6 @@ export type OkResponse = {
   provenance: Turn15Provenance;
 };
 
-/** "abstention": the unified amber shape (drops `kind`), matching turn2. */
-export type AbstentionResponse = { status: "abstention" } & Omit<
-  Abstention,
-  "kind"
->;
-
 /** "error": RED technical error (bad body, oversized body, model/parse fail). */
 export type TechnicalErrorResponse = {
   status: "error";
@@ -203,17 +202,6 @@ export type Turn15Response =
 // ---------------------------------------------------------------------------
 // Helpers.
 // ---------------------------------------------------------------------------
-
-/** Map a unified Abstention onto the HTTP response shape (drops `kind`). */
-function abstentionResponse(a: Abstention): AbstentionResponse {
-  return {
-    status: "abstention",
-    reason: a.reason,
-    headline: a.headline,
-    detail: a.detail,
-    source: a.source,
-  };
-}
 
 /** Normalise a CaseState's server-owned counters: a hand-crafted / pre-turn1.5
  *  POST may omit round / discriminating_qa, so default them defensively. */
@@ -242,7 +230,7 @@ function confirmedFactsFrom(caseState: CaseState): ConfirmedFactsSummary {
  *  the MACHINE reason stays no_matching_guideline (Decision) — the headline/detail
  *  carry the urgency; we reuse the gate copy + adapter rather than hand-rolling. */
 function noGuidelineResponse(): AbstentionResponse {
-  return abstentionResponse(fromRefusalDecision(noGuidelineAbstention()));
+  return toAbstentionResponse(fromRefusalDecision(noGuidelineAbstention()));
 }
 
 // ---------------------------------------------------------------------------
