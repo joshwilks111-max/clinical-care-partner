@@ -30,6 +30,7 @@ export type Turn1Success = {
   differential: Differential;
   extractedFacts: ExtractedFacts;
   candidateGuidelines: Differential["candidate_guidelines"];
+  confidence: "low" | "medium" | "high";
 };
 
 export type Turn1Refusal = {
@@ -304,6 +305,7 @@ const CROUP_CASE_STATE: CaseState = {
   selected_condition: null,
   selected_guideline_id: null,
   selected_severity: null,
+  discriminating_qa: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -316,6 +318,7 @@ export const FIXTURE_TURN1_SUCCESS: Turn1Success = {
   differential: CROUP_DIFFERENTIAL,
   extractedFacts: CROUP_FACTS,
   candidateGuidelines: CROUP_DIFFERENTIAL.candidate_guidelines,
+  confidence: "high",
 };
 
 export const FIXTURE_TURN1_REFUSAL: Turn1Refusal = {

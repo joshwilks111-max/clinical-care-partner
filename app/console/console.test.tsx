@@ -321,7 +321,9 @@ describe("Console — turn-1.5 ask copy is data-driven", () => {
     );
     fireEvent.click(screen.getByTestId("confirm-weight-button"));
     await waitFor(() =>
-      expect(screen.getByTestId("high-impact-question-card")).toBeInTheDocument(),
+      expect(
+        screen.getByTestId("high-impact-question-card"),
+      ).toBeInTheDocument(),
     );
     expect(screen.getByTestId("high-impact-eyebrow")).toHaveTextContent(
       /EPIGLOTTITIS/,
@@ -358,7 +360,9 @@ describe("Console — answer recorded does not auto-run Turn 2", () => {
     );
     fireEvent.click(screen.getByTestId("confirm-weight-button"));
     await waitFor(() =>
-      expect(screen.getByTestId("high-impact-question-card")).toBeInTheDocument(),
+      expect(
+        screen.getByTestId("high-impact-question-card"),
+      ).toBeInTheDocument(),
     );
     fireEvent.click(
       document.querySelector('[data-answer="absent"]') as HTMLButtonElement,
