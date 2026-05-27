@@ -4,7 +4,7 @@ A thin clinical router over a registry of deterministic, safety-audited skills. 
 quote" — the layer above: **weigh the differential → clinician steers → apply safely.**
 
 > Design contract: [`DESIGN.md`](DESIGN.md). Architecture: [`docs/architecture.png`](docs/architecture.png) (one-page) · [`docs/architecture.md`](docs/architecture.md) (source).
-> Deferred list: [`TODOS.md`](TODOS.md). The WHY behind every claim:
+> Deferred list: [`TODOS.md`](TODOS.md). What's next: [`NEXT-STEPS.md`](NEXT-STEPS.md). The WHY behind every claim:
 > [`research/papers.md`](research/papers.md) · [`clinical-facts.md`](research/clinical-facts.md) · [`last30days.md`](research/last30days.md).
 
 ---
@@ -81,19 +81,15 @@ boundary as a visible seam.
 
 **ConText/NegEx assertion pre-pass (v1.2.0.0).** Inside Turn 1, a deterministic note scanner
 ([`lib/note-discriminator-scan.ts`](lib/note-discriminator-scan.ts)) runs after the weight gate and
-before the LLM. For every must-not-miss condition with `discriminator_surface_forms` in the
-registry, it scans the raw note for each canonical discriminator's surface forms and emits
-`present | absent | not_documented` per finding (Chapman 2001 *JAMIA*; Harkema 2009 *JBI* 42:839 —
-named prior art, not invention). Two effects: (a) the Turn 1 prompt receives a trusted
-`REGISTRY-GROUNDED FINDINGS` block listing what the note documented absent, so the LLM uses the
-canonical registry strings verbatim in `negative_evidence`; (b) a server-side canonicalisation pass
-rewrites any LLM paraphrases to the registry strings whenever the scanner positively grounded the
-same finding. The Turn 1.5 override (`shouldOverrideToNoQuestion`) then matches by `Set` identity:
-if every registry discriminator for the target is in `negative_evidence`, the question is skipped
-and the UI surfaces a green "NO CLARIFYING QUESTION NEEDED" badge naming which discriminators
-grounded the override. The deterministic spine now reaches one layer earlier — the note becomes
-the safety check. Generalises by registry data, not code: adding a new must-not-miss condition with
-synonyms needs zero scanner/prompt/route edits (`buildDiscriminatorSurfaceFormMap()` is the lever).
+before the LLM. For every must-not-miss condition in the registry, it checks the raw note for each
+canonical discriminator and marks it `present | absent | not_documented` — named prior art
+(Chapman 2001 *JAMIA*; Harkema 2009 *JBI* 42:839), not invention. Two things happen: the Turn 1
+prompt receives a trusted findings block so the LLM uses registry strings verbatim in
+`negative_evidence`; and a server-side pass rewrites any paraphrases back to those canonical
+strings. Then Turn 1.5 checks by set identity — if the note already documents all the discriminators
+absent, it skips the question and shows a green "NO CLARIFYING QUESTION NEEDED" badge. The note
+itself becomes the safety check. Adding a new must-not-miss condition needs zero scanner edits —
+just add the discriminators to the registry.
 
 ### Retrieval: whole-document injection — the right tool for a two-document corpus
 
@@ -349,21 +345,12 @@ Full list with build triggers: **[`TODOS.md`](TODOS.md)**.
 
 **Delivered on this branch** (formerly the three sharpest "if I had another day" beats — now shipped):
 
-- **Wrong-guideline auto-abstain guard** — both halves ship. v1 logs the routed `guideline_id`, runs
-  the **audit assertion**, *and* abstains on a mismatch with a distinct `wrong_guideline` reason
-  (separate from `no_matching_guideline`: a guideline matched but not the confirmed condition, vs
-  nothing matched). Not just awareness — the behaviour.
-- **Differential-collapse loop (Turn 1.5 advisory rewrite)** — Turn 1.5 is diagnostic-completeness
-  assist only (`ask` | `ok` | `recorded` | `error`; no Turn 1.5 abstention). One optional
-  high-impact question + recommended guideline; clinician can skip or override. Turn 2 remains the
-  dose gate (case9 rule-out→dose 2.13 mg). Prompt artefacts: `prompts/turn1.5-rewrite.md`, live
-  traces in `prompts/turn1.5-rewrite.traces.md`.
-- **ConText/NegEx assertion pre-pass (v1.2.0.0)** — the deterministic note scanner + server-side
-  canonicalisation + Turn 1.5 override + green-badge UI described in §3 above. Closes the
-  string-identity gap between the LLM's paraphrased `negative_evidence` and the registry's
-  canonical discriminators: when the note documents all three epiglottitis discriminators absent,
-  the system sees that and skips the clarifying question. The pattern is named prior art, not
-  invention (ConText/NegEx + investigate-before-abstain).
+Three beats that were the sharpest "if I had another day" items are now shipped: the wrong-guideline
+guard (both the audit assertion and the abstain behaviour — mismatch returns a distinct
+`wrong_guideline` reason, separate from `no_matching_guideline`); Turn 1.5's advisory rewrite
+(diagnostic-completeness assist only, clinician can skip or override, Turn 2 remains the dose gate
+— case9 rule-out→dose 2.13 mg); and the ConText/NegEx assertion pre-pass described in §3 above
+(the pattern is named prior art, not invention: ConText/NegEx + investigate-before-abstain).
 
 The next-sharpest genuinely-deferred beats:
 
@@ -396,7 +383,7 @@ The next-sharpest genuinely-deferred beats:
 ├── scripts/             # dev utilities: draft-turn15-trace, measure-prompt-tokens
 ├── app/                 # Next.js App Router
 │   ├── api/turn1/ + api/turn1.5/ + api/turn2/   # judgment / advisory-collapse / execution handlers (runtime=nodejs)
-│   └── console/              # the structured two-panel care-partner console (not a chatbot)
+│   └── console/              # the Bluey 3-column care-partner shell (rail · case-canvas · evidence-panel; not a chatbot)
 ├── components/          # shadcn/ui base + AI Elements leaf components (Tool, Sources, InlineCitation)
 ├── tests/evals/         # Promptfoo suite (10 cases: 6 demo + injection + no-guideline + 2 collapse) + sample-output.txt + LLM-judge hook
 ├── docs/architecture.md # the one-page judgment-up / execution-down diagram

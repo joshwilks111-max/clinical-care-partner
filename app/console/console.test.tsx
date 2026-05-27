@@ -75,7 +75,7 @@ describe("Console — refusal flow (amber)", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Console />);
-    fireEvent.change(screen.getByLabelText(/paste your own note/i), {
+    fireEvent.change(screen.getByLabelText(/patient note or transcript/i), {
       target: {
         value:
           "Jack T, 3yo. Barky cough, stridor at rest, no cyanosis. ?croup.",

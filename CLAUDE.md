@@ -12,7 +12,7 @@ Next.js 16 (App Router, Node runtime) + Vercel AI SDK 6 (`ai@6` + `@ai-sdk/anthr
 |---|---|
 | Install | `npm install` |
 | Run / dev | `npm run dev` (http://localhost:3000) |
-| Test | `npx vitest run` (314 tests) · evals: `npm run eval` (10-case Promptfoo) |
+| Test | `npx vitest run` (352 tests) · evals: `npm run eval` (10-case Promptfoo) |
 | Typecheck | `npx tsc --noEmit` |
 | Build | `npm run build` |
 | Deploy | auto on push to `main` (Vercel native git integration). Manual: `vercel deploy --prod` (live: https://clinical-care-partner.vercel.app). See README §4 for the full pipeline. |
