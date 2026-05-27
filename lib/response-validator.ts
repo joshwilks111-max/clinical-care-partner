@@ -214,16 +214,32 @@ function indexToolResults(steps: ReadonlyArray<StepLike>): ToolResultIndex {
   return idx;
 }
 
-/** Best-effort detection of a refusal-shaped tool output. Our tools emit
- *  `{ kind: "refusal", reason, message }` — see tools/calculate_dose.ts. */
+/** Best-effort detection of a refusal-shaped tool output.
+ *
+ *  The harness has two refusal-wrapper conventions in production:
+ *    - `{ kind: "refusal", reason, message }` — calculate_dose (legacy, the
+ *      original safety-spine tool; `kind` discriminator was natural because
+ *      the success case is `{ kind: "dose", … }`).
+ *    - `{ status: "refusal", reason, message }` — load_guideline and
+ *      get_reassessment_plan (v3.1 Lane B, retrieval-style tools where
+ *      `status` reads more naturally because the success case is
+ *      `{ status: "ok", … }`).
+ *
+ *  Both shapes are equally valid; the discriminator name is the tool author's
+ *  call. Widening the validator to accept either keeps Lane B's retrieval
+ *  refusals (out_of_scope, invalid_guideline_id, no_reassessment_required, …)
+ *  flowing through `validated.refusal` to the RefusalCard UI. Without this
+ *  widening the asthma-out-of-scope smoke case is silently broken — the
+ *  refusal is dropped on the floor and the UI renders no card.
+ *
+ *  Both shapes carry `reason: string` and `message: string`; callers only
+ *  read those two fields, so the union return type is safe. */
 function isRefusalOutput(
   output: unknown,
-): output is { kind: "refusal"; reason: string; message: string } {
-  return (
-    typeof output === "object" &&
-    output !== null &&
-    (output as { kind?: unknown }).kind === "refusal"
-  );
+): output is { reason: string; message: string } {
+  if (typeof output !== "object" || output === null) return false;
+  const o = output as { kind?: unknown; status?: unknown };
+  return o.kind === "refusal" || o.status === "refusal";
 }
 
 // ─── The validator entry point ───────────────────────────────────────────────

@@ -407,4 +407,35 @@ describe("validateResponse", () => {
     expect(r.refusal!.kind).toBe("weight_missing");
     expect(r.refusal!.toolName).toBe("calculate_dose");
   });
+
+  // The validator must accept BOTH refusal-wrapper conventions in the harness:
+  //   - calculate_dose uses `{ kind: "refusal", reason, message }`  (legacy)
+  //   - load_guideline + get_reassessment_plan use `{ status: "refusal", … }`
+  //     (Lane B retrieval-style convention)
+  // The fix landed in `isRefusalOutput` (widening to accept either
+  // discriminator); this test pins it so a future revert fails loudly.
+  // Without this widening the asthma-out-of-scope smoke case silently fails
+  // — the load_guideline refusal is dropped and the UI renders no card.
+  it("load_guideline {status: refusal} surfaces through validator (D3 fix)", () => {
+    const r = validateResponse(
+      event([
+        step("Asthma is not in the supported guideline set for NZ.", [
+          {
+            toolCallId: "lg-001",
+            toolName: "load_guideline",
+            output: {
+              status: "refusal",
+              reason: "out_of_scope",
+              message: "No guideline modelled for asthma in NZ.",
+            },
+          },
+        ]),
+      ]),
+    );
+    expect(r.blocked).toBeUndefined();
+    expect(r.dose_card).toBeNull();
+    expect(r.refusal).not.toBeNull();
+    expect(r.refusal!.kind).toBe("out_of_scope");
+    expect(r.refusal!.toolName).toBe("load_guideline");
+  });
 });
