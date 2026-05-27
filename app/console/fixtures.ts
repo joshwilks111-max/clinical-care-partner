@@ -55,12 +55,11 @@ export type Turn1Response = Turn1Success | Turn1Refusal | Turn1Error;
 export type DemoCase = {
   /** Stable key for buttons/tests. */
   id:
-    | "refusal"
+    | "croup-mild"
     | "croup"
-    | "cap"
+    | "croup-severe"
     | "anaphylaxis"
-    | "transcript-croup"
-    | "transcript-noweight";
+    | "transcript-croup";
   /** Which demo group the button sits in (Notes vs Transcripts). */
   group: "note" | "transcript";
   /** Button label the reviewer clicks. */
@@ -74,34 +73,172 @@ export type DemoCase = {
 export const DEMO_NOTES: DemoCase[] = [
   // --- NOTES (structured clinical notes) ---
   {
-    id: "refusal",
+    id: "croup-mild",
     group: "note",
-    label: "Refusal (no weight)",
-    caption: "Weightless note → pre-LLM refusal, zero model calls.",
-    // No kg weight present → the pre-LLM gate refuses with no model call.
-    note: "Jack T, 3yo. Barky cough, stridor at rest, no cyanosis. ?croup.",
+    label: "Croup — Mild",
+    caption: "Mild croup, 12.8 kg → 1.92 mg dexamethasone, safe for home.",
+    note: `Patient: Mia H.
+DOB: 08/07/2021
+Age: 3 years
+Weight: 12.8 kg
+
+Presenting complaint:
+Mia presented with a 1-day history of barky, seal-like cough and mild hoarseness. Parents report symptoms began overnight, with no preceding choking event or fever. No noisy breathing noted at rest at home, though parents heard occasional inspiratory sounds when she was upset or crying.
+
+History:
+- Onset of coryzal symptoms 2 days ago; barky cough began early this morning
+- No stridor noted at rest; intermittent stridor when agitated or crying
+- Low-grade fever (up to 37.8°C); settled with paracetamol
+- No cyanosis, no apnoea, no drooling
+- Normal oral intake; tolerating fluids well
+- Fully vaccinated and developmentally on track for age
+- No history of asthma, recurrent croup, or chronic respiratory illness
+- No known drug allergies; no recent travel or sick contacts
+
+Examination:
+- Alert, interactive, in no acute respiratory distress; sitting comfortably
+- No audible stridor at rest; mild intermittent inspiratory stridor with crying
+- No chest wall recession; no use of accessory muscles
+- RR 26, HR 110, SpO2 99% on room air, T 37.6°C
+- Chest: clear air entry bilaterally, no wheeze or crackles
+- ENT: mild pharyngeal erythema; no tonsillar exudate, no drooling, no stridor at rest
+- CVS: normal S1/S2, no murmurs
+- Neurological: alert, playful, developmentally appropriate
+
+Assessment:
+Mia presents with features consistent with mild croup (laryngotracheobronchitis), likely viral in aetiology. No stridor at rest, no signs of moderate–severe respiratory distress, no features suggestive of bacterial tracheitis, epiglottitis, or foreign body aspiration.
+
+Plan:
+- Administer corticosteroids as per local guidelines for mild croup
+- Parents educated on return precautions: worsening stridor at rest, increased work of breathing, cyanosis, or drooling
+- Safe for discharge with outpatient follow-up if symptoms persist beyond 48 hours`,
   },
   {
     id: "croup",
     group: "note",
-    label: "Croup (14.2 kg moderate)",
-    caption: "Jack T, 14.2 kg moderate croup → 2.13 mg dexamethasone.",
-    note: "Jack T, 3yo, 14.2 kg. Barky cough, stridor at rest, no cyanosis, not lethargic. ?croup.",
+    label: "Croup — Moderate",
+    caption: "Jack 14.2 kg moderate croup → 2.13 mg dexamethasone.",
+    note: `Patient: Jack T.
+DOB: 12/03/2022
+Age: 3 years
+Weight: 14.2 kg
+
+Presenting complaint:
+Jack presented with a 2-day history of barky cough, hoarse voice, and low-grade fever. Symptoms worsened overnight, with increased work of breathing and stridor noted at rest this morning. No history of choking, foreign body aspiration, or recent travel. No known sick contacts outside the household.
+
+History:
+- Onset of URTI symptoms 2 days ago, including rhinorrhoea and dry cough
+- Barking cough began yesterday evening, hoarseness and intermittent inspiratory stridor overnight
+- Mild fever (up to 38.4°C) controlled with paracetamol
+- No cyanosis or apnoea reported
+- Fully vaccinated and developmentally appropriate for age
+- No history of asthma or other chronic respiratory illness
+- No previous episodes of croup
+- No drug allergies
+
+Examination:
+- Alert, mildly distressed, sitting upright with audible inspiratory stridor at rest
+- Barky cough noted during assessment
+- Mild suprasternal and intercostal recession
+- RR 32, HR 124, SpO2 97% on room air, T 37.9°C
+- Chest: clear air entry bilaterally, no wheeze or crackles
+- ENT: mild erythema of oropharynx, no tonsillar exudate
+- CVS: normal S1/S2, no murmurs
+- Neurological: alert, interactive, normal tone and reflexes
+
+Assessment:
+Jack presents with classic features of moderate croup (laryngotracheobronchitis), likely viral in origin. No signs of severe respiratory distress or impending airway obstruction. No signs suggestive of bacterial tracheitis or other differentials (e.g. foreign body, epiglottitis).
+
+Plan:
+- Administer corticosteroids
+- Plan as per local guidelines for croup`,
   },
   {
-    id: "cap",
+    id: "croup-severe",
     group: "note",
-    label: "Cap (25 kg severe)",
+    label: "Croup — Severe",
     caption: "25 kg severe croup → 15 mg raw → CAPPED to 12 mg.",
-    note: "5yo, 25 kg. Severe croup: persistent stridor at rest, marked distress, lethargic, cyanosis.",
+    note: `Patient: Thomas R.
+DOB: 14/09/2019
+Age: 5 years
+Weight: 25 kg
+
+Presenting complaint:
+Thomas presented as an emergency transfer from a rural GP with a 3-day progressive barky cough, now with marked respiratory distress. Parents report symptoms began with a mild URTI but have deteriorated rapidly over the past 12 hours. Persistent stridor at rest since this morning; parents noted bluish discolouration around his lips approximately 2 hours prior to arrival.
+
+History:
+- URTI symptoms for 3 days; barky cough onset day 2
+- Severe inspiratory stridor at rest since this morning; stridor now audible without a stethoscope
+- High fever (up to 39.8°C); not responding well to paracetamol
+- Cyanosis around lips noted at home approximately 2 hours ago (resolved en route)
+- Increasingly lethargic; not interested in eating or drinking since morning
+- No previous episodes of croup; fully vaccinated including Hib
+- No history of asthma, airway anomaly, or previous intubation
+- No known drug allergies
+
+Examination:
+- Pale, lethargic, appears toxic; preference for sitting forward position
+- Audible inspiratory and early expiratory stridor at rest
+- Marked suprasternal, intercostal, and subcostal recession; use of accessory muscles
+- RR 42, HR 148, SpO2 90% on room air (improved to 95% on 2 L/min O2 via face mask), T 39.5°C
+- Chest: reduced air entry bilaterally at bases; no wheeze
+- ENT: no drooling; pharynx erythematous; no tonsillar exudate; no muffled voice (soft stridor)
+- CVS: tachycardia, normal S1/S2
+- Neurological: lethargic but rousable; responds to name; decreased interest in surroundings
+
+Assessment:
+Thomas presents with severe croup (laryngotracheobronchitis). Features of impending airway obstruction: persistent stridor at rest, marked recession, oxygen requirement, lethargy, and prior cyanosis. Must exclude bacterial tracheitis (toxic appearance, high fever, poor response to treatment) and epiglottitis (drooling absent, no muffled voice, presentation atypical). Requires urgent intervention.
+
+Plan:
+- Administer corticosteroids as per local guidelines for severe croup (maximum dose applies)
+- Nebulised adrenaline and continuous monitoring
+- Senior and anaesthetic review: potential for rapid airway deterioration
+- ICU escalation pathway activated`,
   },
   {
     id: "anaphylaxis",
     group: "note",
-    label: "Anaphylaxis (IM adrenaline)",
+    label: "Anaphylaxis",
     caption:
       "Adrenaline 0.01 mg/kg IM → 0.14 mL. Same harness, different drug.",
-    note: "4yo, 14.2 kg. Acute urticaria, lip swelling and wheeze after peanut. Anaphylaxis.",
+    note: `Patient: Sophie M.
+DOB: 22/11/2021
+Age: 4 years
+Weight: 14.2 kg
+
+Presenting complaint:
+Sophie presented with an acute allergic reaction following accidental ingestion of peanut butter at a birthday party approximately 25 minutes ago. Parents report rapid onset of lip swelling, widespread urticaria, and wheeze shortly after ingestion. No previous documented anaphylaxis; known peanut allergy, family had forgotten to bring epi-pen.
+
+History:
+- Known peanut allergy diagnosed at age 2 following mild reaction (hives only); no prior anaphylaxis
+- Accidental ingestion approximately 25 minutes ago (single cracker with trace peanut butter)
+- Rapid onset within 10 minutes: perioral tingling → lip swelling → widespread urticaria → wheeze
+- No vomiting, no stridor, no loss of consciousness
+- No prior treatment administered (no epi-pen available at venue)
+- No other known food allergies; no medication allergies
+- No history of asthma or eczema
+- Fully vaccinated; developmentally appropriate
+
+Examination:
+- Alert and frightened; cooperative with examination
+- Widespread urticaria over trunk and arms; moderate lip and periorbital angioedema
+- No stridor; expiratory wheeze heard bilaterally
+- Mild intercostal recession; no cyanosis
+- RR 36, HR 138, SpO2 95% on room air, BP 88/56 mmHg, T 37.2°C
+- Chest: diffuse bilateral expiratory wheeze; no crackles
+- Skin: urticaria and angioedema as above; no petechiae or purpura
+- CVS: tachycardia, regular rhythm; peripheral pulses present; capillary refill 3 seconds
+- Neurological: alert, anxious, GCS 15
+
+Assessment:
+Sophie presents with anaphylaxis (multi-system IgE-mediated hypersensitivity reaction) to peanut: urticaria and angioedema, bronchospasm, cardiovascular involvement (hypotension, tachycardia), onset within 30 minutes of ingestion. Severity: moderate–severe.
+
+Plan:
+- Adrenaline 0.01 mg/kg IM (anterolateral mid-thigh) as per local anaphylaxis guideline — administer immediately
+- Supplemental oxygen; IV access; continuous monitoring
+- Antihistamine and systemic corticosteroid after adrenaline
+- Observe minimum 4–6 hours post adrenaline (biphasic reaction risk)
+- Allergy/immunology referral and prescription for self-injectable adrenaline prior to discharge`,
   },
 
   // --- TRANSCRIPTS (free-form dialogue — proves "note AND/OR transcript" intake) ---
@@ -122,23 +259,6 @@ export const DEMO_NOTES: DemoCase[] = [
       "Doctor: Good. And how much does he weigh?",
       "Parent: He was 14.2 kg at his check-up last week.",
       "Doctor: Okay. This looks like croup — barky cough with stridor at rest.",
-    ].join("\n"),
-  },
-  {
-    id: "transcript-noweight",
-    group: "transcript",
-    label: "Transcript (no weight)",
-    caption: "Dialogue, NO weight stated → live refusal gate.",
-    // Weight-ABSENT — must contain NO "\d+\s*kg" substring anywhere, or the gate
-    // would pass and call the model. Pasting this fires the pre-LLM refusal,
-    // demonstrating the safety thesis on a messy real-world transcript.
-    note: [
-      "Doctor: What's been going on?",
-      "Parent: My little girl's got a barking cough and this rasping sound breathing in. Started overnight.",
-      "Doctor: Is the noisy breathing there at rest, when she's calm?",
-      "Parent: Yes, even when she's just lying still. No blue lips, and she's still responsive.",
-      "Doctor: Sounds like croup. Do you know her current weight?",
-      "Parent: Honestly no — we haven't been to a check-up in ages, I couldn't tell you.",
     ].join("\n"),
   },
 ];
