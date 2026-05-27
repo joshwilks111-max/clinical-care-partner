@@ -1,27 +1,34 @@
+// app/console/console.tsx
+//
+// The 3-column Bluey shell — state owner only (eng-review lock #3).
+//
+// Console owns: note, draft, turn1, turn2, weightConfirmed, busy, and the new
+// activeDemoId (lock #9). It composes three presentational children:
+//
+//   <Rail>            — brand block + paste textarea + 6 demo cases.
+//   <CaseCanvas>      — CasePanel + turn1 + turn1.5 + decision gate.
+//   <EvidencePanel>   — turn2 result (or empty state).
+//
+// Below the 1100px breakpoint the grid collapses to a single-column banner
+// (lock #7, CSS-only — no JS matchMedia, no hydration-mismatch risk).
+//
+// Clinical behaviour is unchanged from pre-Bluey: same /api/turn1, /api/turn1.5,
+// /api/turn2 calls; same CaseState contract; same gateOpen invariant; same
+// scroll-into-view on turn-1.5/turn-2 status transitions.
+
 "use client";
 
 import { useEffect, useRef, useState } from "react";
 
-import { ShieldAlert, OctagonX } from "lucide-react";
-
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-
-import { CasePanel } from "./case-panel";
-import { Turn1View, Turn1DecisionGate } from "./turn1-view";
-import {
-  HighImpactQuestionCard,
-  NoQuestionNeededBanner,
-  AnswerRecordedBanner,
-} from "./safety-check-card";
-import { Turn2View } from "./turn2-view";
-import { PhaseLoader, type Phase } from "./phase-loader";
-import { DEMO_NOTES, type Turn1Response, type Turn1Success } from "./fixtures";
+import { Rail } from "./rail";
+import { CaseCanvas } from "./case-canvas";
+import { EvidencePanel } from "./evidence-panel";
+import type { Turn1Response, Turn1Success } from "./fixtures";
 import type { Turn2Response } from "@/app/api/turn2/route";
 import type { CaseState } from "@/lib/case-state";
 import { getGuideline } from "@/registry/guidelines";
 import { gateOpen, useTurn15Flow } from "./use-turn15-flow";
+import type { Phase } from "./phase-loader";
 
 type Busy =
   | { kind: "turn1" }
@@ -36,6 +43,9 @@ export function Console() {
   const [weightConfirmed, setWeightConfirmed] = useState(false);
   const [turn2, setTurn2] = useState<Turn2Response | null>(null);
   const [busy, setBusy] = useState<Busy>(null);
+  // activeDemoId — eng-review lock #9. Set on demo-button click; clear on
+  // paste-run. Drives the rail item's aria-current="true" highlight.
+  const [activeDemoId, setActiveDemoId] = useState<string | null>(null);
 
   const turn1Ok: Turn1Success | null = turn1?.status === "ok" ? turn1 : null;
 
@@ -73,6 +83,11 @@ export function Console() {
     turn15Busy,
   });
 
+  // anyBusy — true while ANY turn is in flight. Wired into the rail's
+  // disabled-during-work guard (the existing console used busy !== null ||
+  // turn15Busy !== null inline).
+  const anyBusy = busy !== null || turn15InFlight;
+
   async function runTurn1(rawNote: string) {
     const trimmed = rawNote.trim();
     if (trimmed.length === 0) return;
@@ -100,6 +115,18 @@ export function Console() {
     } finally {
       setBusy(null);
     }
+  }
+
+  function onRunPaste(rawNote: string) {
+    // Paste-run is the "I'm not running a known demo" path — clear the
+    // active highlight so no rail row stays selected against a different note.
+    setActiveDemoId(null);
+    void runTurn1(rawNote);
+  }
+
+  function onRunDemo(id: string, demoNote: string) {
+    setActiveDemoId(id);
+    void runTurn1(demoNote);
   }
 
   function onConfirmWeight() {
@@ -156,196 +183,63 @@ export function Console() {
     }
   }
 
+  const turn2Phase: Phase | null = busy?.kind === "turn2" ? busy.phase : null;
+
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6">
-      <header className="mb-5 flex items-center gap-3 border-b pb-4">
-        <div className="flex size-9 items-center justify-center rounded-lg bg-primary font-bold text-primary-foreground">
-          H
-        </div>
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">
-            Care Partner Console
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Clinical decision support · judgment up, execution down
-          </p>
-        </div>
-      </header>
-
-      <section data-testid="demo-buttons" className="mb-5">
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Demo cases — one click, no typing
-        </p>
-        <div className="space-y-3">
-          {(["note", "transcript"] as const).map((group) => (
-            <div key={group}>
-              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-                {group === "note" ? "Notes" : "Transcripts"}
-              </p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {DEMO_NOTES.filter((d) => d.group === group).map((demo) => (
-                  <div key={demo.id} className="flex flex-col">
-                    <Button
-                      variant="outline"
-                      data-demo-id={demo.id}
-                      disabled={busy !== null || turn15Busy !== null}
-                      onClick={() => runTurn1(demo.note)}
-                      className="h-auto min-h-[44px] py-2"
-                    >
-                      {demo.label}
-                    </Button>
-                    <span className="mt-1 text-xs leading-tight text-foreground/70">
-                      {demo.caption}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section data-testid="paste-own" className="mb-5 border-t pt-4">
-        <label
-          htmlFor="paste-note"
-          className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-muted-foreground"
-        >
-          Or paste your own note or transcript
-        </label>
-        <Textarea
-          id="paste-note"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-              e.preventDefault();
-              if (draft.trim() && busy === null && turn15Busy === null)
-                runTurn1(draft);
-            }
-          }}
-          disabled={busy !== null || turn15Busy !== null}
-          rows={4}
-          aria-describedby="paste-help"
-          placeholder="Paste a free-text clinical note or a doctor-patient transcript, then Run."
-          className="resize-y text-sm"
+    <>
+      {/* The 3-column shell (eng-review lock #2, fixed widths 272 + 1fr + 392).
+          Tailwind v4 arbitrary value class so the widths are visible in the DOM
+          for the mandatory regression test. */}
+      <div
+        data-testid="bluey-shell"
+        className="bluey-shell grid h-screen w-full grid-cols-[272px_1fr_392px]"
+      >
+        <Rail
+          draft={draft}
+          onDraftChange={setDraft}
+          onRun={onRunPaste}
+          onRunDemo={onRunDemo}
+          busy={anyBusy}
+          activeDemoId={activeDemoId}
         />
-        <div className="mt-2 flex items-center gap-3">
-          <Button
-            data-testid="paste-run"
-            disabled={
-              busy !== null || turn15Busy !== null || draft.trim().length === 0
-            }
-            onClick={() => runTurn1(draft)}
-            className="h-auto min-h-[44px] py-2"
-          >
-            Run
-          </Button>
-          <span id="paste-help" className="text-xs text-muted-foreground">
-            Same engine as the demos · ⌘/Ctrl+Enter to run
-          </span>
-        </div>
-      </section>
-
-      <div className="grid grid-cols-1 items-start gap-4 md:grid-cols-[300px_1fr]">
-        <CasePanel
+        <CaseCanvas
           note={note}
+          turn1={turn1}
+          turn1Ok={turn1Ok}
           facts={turn1Ok?.extractedFacts ?? null}
           weightConfirmed={weightConfirmed}
           onConfirmWeight={onConfirmWeight}
+          turn1Busy={busy?.kind === "turn1"}
+          turn2Busy={busy?.kind === "turn2"}
+          turn15={turn15}
+          turn15Busy={turn15InFlight}
+          pendingAsk={pendingAsk}
+          recommendedGuidelineId={recommendedGuidelineId}
+          guidelineGateOpen={guidelineGateOpen}
+          onAnswerTurn15={(a) => void runTurn15Answer(a)}
+          onSelectGuideline={runTurn2}
+          activeStateRef={activeStateRef}
         />
+        <EvidencePanel turn2={turn2} turn2Busy={turn2Phase} />
+      </div>
 
-        <div className="space-y-4">
-          {turn1 === null && busy === null && (
-            <div className="rounded-xl border border-dashed bg-muted/20 p-8 text-center text-sm text-muted-foreground">
-              Pick a demo case above to start.
-            </div>
-          )}
-
-          {busy?.kind === "turn1" && (
-            <PhaseLoader phase="building-differential" />
-          )}
-
-          {turn1?.status === "refusal" && (
-            <Alert variant="safety" data-testid="turn1-refusal">
-              <ShieldAlert />
-              <AlertTitle className="flex items-center gap-2">
-                <span className="font-mono text-[11px] tracking-wide">
-                  DELIBERATE ABSTENTION
-                </span>
-              </AlertTitle>
-              <AlertDescription className="text-[13px] font-semibold text-safety-foreground">
-                {turn1.message}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          {turn1?.status === "error" && (
-            <Alert variant="destructive" data-testid="turn1-error">
-              <OctagonX />
-              <AlertTitle>Technical error</AlertTitle>
-              <AlertDescription>{turn1.message}</AlertDescription>
-            </Alert>
-          )}
-
-          {turn1Ok && <Turn1View turn1={turn1Ok} />}
-
-          <div ref={activeStateRef} className="space-y-4">
-            {turn15InFlight && <PhaseLoader phase="checking-safety" />}
-
-            {turn15?.status === "ask" && pendingAsk && (
-              <HighImpactQuestionCard
-                target={pendingAsk.target}
-                question={pendingAsk.question}
-                rationaleSummary={pendingAsk.rationale_summary}
-                onAnswer={(a) => void runTurn15Answer(a)}
-                onSkip={() => void runTurn15Answer(null)}
-                busy={turn15InFlight}
-              />
-            )}
-
-            {turn15?.status === "ok" && (
-              <NoQuestionNeededBanner
-                rationaleSummary={turn15.rationale_summary}
-                overriddenTarget={turn15.overridden_target}
-                overriddenDiscriminators={turn15.overridden_discriminators}
-              />
-            )}
-
-            {turn15?.status === "recorded" && (
-              <AnswerRecordedBanner
-                target={
-                  turn15.caseState.discriminating_qa.at(-1)?.target ??
-                  "question"
-                }
-                engaged={
-                  turn15.caseState.discriminating_qa.at(-1)?.engaged ?? false
-                }
-              />
-            )}
-
-            {turn15?.status === "error" && (
-              <Alert variant="destructive" data-testid="turn15-error">
-                <OctagonX />
-                <AlertTitle>Advisory check unavailable</AlertTitle>
-                <AlertDescription>{turn15.message}</AlertDescription>
-              </Alert>
-            )}
-
-            {guidelineGateOpen && turn1Ok && (
-              <Turn1DecisionGate
-                turn1={turn1Ok}
-                weightConfirmed={weightConfirmed}
-                busy={busy?.kind === "turn2"}
-                recommendedGuidelineId={recommendedGuidelineId}
-                onSelectGuideline={runTurn2}
-              />
-            )}
-
-            {busy?.kind === "turn2" && <PhaseLoader phase={busy.phase} />}
-            {turn2 && <Turn2View result={turn2} />}
-          </div>
+      {/* Narrow-viewport banner (eng-review lock #7). CSS-only — no JS
+          matchMedia listener, so no hydration-mismatch risk. The shell above
+          is hidden in CSS at <1100px; this banner is hidden ≥1100px. */}
+      <div
+        data-testid="narrow-viewport-banner"
+        className="narrow-viewport-banner hidden h-screen items-center justify-center bg-background px-6 text-center"
+      >
+        <div className="max-w-sm">
+          <h1 className="text-[18px] font-semibold text-foreground">
+            This demo is built for desktop.
+          </h1>
+          <p className="mt-2 text-[13px] text-muted-foreground">
+            Open on a larger screen (≥ 1100px wide) to interact with the Bluey
+            clinical care partner.
+          </p>
         </div>
       </div>
-    </main>
+    </>
   );
 }

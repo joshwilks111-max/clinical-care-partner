@@ -23,11 +23,10 @@
 
 "use client";
 
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Sparkles } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { cn } from "@/components/lib/utils";
 
 import { ProvenanceBadge } from "./provenance-badge";
@@ -57,15 +56,25 @@ function LikelihoodTag({
 }: {
   likelihood: DifferentialCondition["likelihood"];
 }) {
-  const isMnm = likelihood === "must-not-miss";
+  // Bluey 3-column shell — three-tone pill (variant-B-balanced):
+  //   likely         → pastel-blue   (the recommended path; calm)
+  //   must-not-miss  → amber-orange  (the safety call-out; warm + sharp)
+  //   possible       → slate         (the long tail; muted)
+  // The old emerald-for-likely was inherited from the pre-Bluey palette and
+  // fights the new pastel-blue background — emerald reads as "succeeded"
+  // rather than "ranked likely". Pastel-blue ties likely back to the brand.
+  const cls =
+    likelihood === "must-not-miss"
+      ? "bg-safety text-safety-foreground"
+      : likelihood === "likely"
+        ? "bg-primary-soft text-primary-d"
+        : "bg-muted text-muted-foreground";
   return (
     <span
       data-likelihood={likelihood}
       className={cn(
-        "rounded-full px-2 py-0.5 text-[11px] font-semibold",
-        isMnm
-          ? "bg-safety text-safety-foreground"
-          : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-200",
+        "rounded-full px-2.5 py-0.5 text-[10.5px] font-semibold",
+        cls,
       )}
     >
       {likelihood}
@@ -74,50 +83,49 @@ function LikelihoodTag({
 }
 
 function ConditionRow({ condition }: { condition: DifferentialCondition }) {
+  // Bluey 3-column shell — each condition is its OWN card (variant-B-balanced)
+  // instead of one card with sub-rows. The pill sits on the right of the
+  // header. Supports + Findings-absent are inline two-row labelled values,
+  // matching the variant's two-line micro-layout.
   return (
-    <div
+    <article
       data-condition={condition.name}
-      className="grid grid-cols-1 gap-2 border-b py-3 last:border-b-0 sm:grid-cols-2"
+      className="card-shadow rounded-xl border border-hairline bg-white p-4"
     >
-      <div className="col-span-full flex items-center gap-2 font-semibold">
-        {condition.name}
+      <header className="mb-2 flex items-center justify-between">
+        <h3 className="text-[15px] font-semibold">{condition.name}</h3>
         <LikelihoodTag likelihood={condition.likelihood} />
-      </div>
-
-      {/* Positive evidence — the primary supporting column. */}
-      <div>
-        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Supports
-        </div>
-        <div className="mt-1 text-[13px] text-emerald-700 dark:text-emerald-300">
+      </header>
+      <ul className="space-y-1 text-[13px]">
+        <li>
+          <span className="text-muted-foreground">Supports: </span>
           {condition.positive_evidence.length > 0
             ? condition.positive_evidence.join(" · ")
             : "—"}
-        </div>
-      </div>
-
-      {/* D5 — NEGATIVE EVIDENCE: muted pills, secondary to positive. The moat. */}
-      <div>
-        <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Findings absent / not documented
-        </div>
-        <div className="mt-1 flex flex-wrap gap-1">
+        </li>
+        <li>
+          <span className="text-muted-foreground">
+            Findings absent / not documented:{" "}
+          </span>
           {condition.negative_evidence.length > 0 ? (
-            condition.negative_evidence.map((finding) => (
-              <span
-                key={finding}
-                data-negative-evidence
-                className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground"
-              >
-                {finding}
-              </span>
-            ))
+            <span>
+              {/* Each finding is its OWN data-negative-evidence span so the
+                  test invariant pills[i].textContent === finding holds. The
+                  ' · ' separator is a text node OUTSIDE the spans (a Heidi-
+                  style middot, not part of any finding's content). */}
+              {condition.negative_evidence.map((finding, i) => (
+                <span key={finding}>
+                  <span data-negative-evidence>{finding}</span>
+                  {i < condition.negative_evidence.length - 1 ? " · " : ""}
+                </span>
+              ))}
+            </span>
           ) : (
-            <span className="text-[12px] text-muted-foreground">—</span>
+            <span>—</span>
           )}
-        </div>
-      </div>
-    </div>
+        </li>
+      </ul>
+    </article>
   );
 }
 
@@ -140,7 +148,9 @@ export function Turn1View({ turn1 }: Turn1ViewProps) {
       {turn1.confidence === "low" && (
         <Alert variant="safety" data-testid="turn1-low-confidence">
           <AlertTriangle />
-          <AlertTitle className="text-[13px]">Low confidence differential</AlertTitle>
+          <AlertTitle className="text-[13px]">
+            Low confidence differential
+          </AlertTitle>
           <AlertDescription className="text-[12px]">
             The note was sparse or ambiguous. Review findings carefully before
             applying a guideline.
@@ -148,27 +158,30 @@ export function Turn1View({ turn1 }: Turn1ViewProps) {
         </Alert>
       )}
       {/* Step header with the JUDGMENT provenance badge. */}
-      <div className="flex items-center gap-2">
-        <span className="flex size-6 items-center justify-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
-          1
+      <div className="flex items-baseline justify-between">
+        <div className="flex items-center gap-2">
+          <span className="flex size-6 items-center justify-center rounded-md bg-primary text-xs font-bold text-primary-foreground">
+            1
+          </span>
+          <span className="text-[15px] font-semibold">
+            Differential diagnosis
+          </span>
+          <ProvenanceBadge kind="llm-differential" />
+        </div>
+        <span className="font-mono text-[10.5px] text-muted-foreground">
+          Ranked · positive + negative evidence
         </span>
-        <span className="text-sm font-semibold">Differential</span>
-        <ProvenanceBadge kind="llm-differential" />
       </div>
 
-      {/* D1 — the ranked list is first-thing-visible, must-not-miss first. */}
-      <Card>
-        <CardHeader className="pb-0">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Weighted differential
-          </div>
-        </CardHeader>
-        <CardContent>
-          {ranked.map((condition) => (
-            <ConditionRow key={condition.name} condition={condition} />
-          ))}
-        </CardContent>
-      </Card>
+      {/* D1 — the ranked list is first-thing-visible, must-not-miss first.
+          Each condition is its own card-shadow card (variant-B-balanced) so
+          the differential reads as a stack of distinct artifacts, not rows
+          in a table. */}
+      <div className="space-y-2.5">
+        {ranked.map((condition) => (
+          <ConditionRow key={condition.name} condition={condition} />
+        ))}
+      </div>
     </section>
   );
 }
@@ -218,14 +231,17 @@ export function Turn1DecisionGate({
   return (
     // D3 — "your turn": the dominant guideline buttons. Buttons appearing IS the
     // affordance (replaces any spinner). Gated on weight confirmation so the
-    // human owns the safety-critical input before dosing.
+    // human owns the safety-critical input before dosing. Bluey treatment:
+    // border-2 border-primary instead of dashed (variant-B-balanced — the
+    // selector is the visually-dominant element under the differential).
     <div
       data-testid="your-turn"
-      className="rounded-lg border border-dashed border-primary/60 bg-primary/5 p-3"
+      className="card-shadow rounded-xl border-2 border-primary bg-white p-4"
     >
-      <div className="mb-2 flex items-center gap-2">
-        <p className="text-sm font-semibold text-primary">
-          → Your turn: select the guideline to apply
+      <div className="mb-3 flex items-center gap-2">
+        <Sparkles className="size-3.5 text-primary" aria-hidden />
+        <p className="text-[12px] font-semibold uppercase tracking-wider text-primary-d">
+          Your turn — select the guideline to apply
         </p>
         <ProvenanceBadge kind="clinician-selected" />
       </div>

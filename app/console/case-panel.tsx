@@ -17,11 +17,24 @@ import { cn } from "@/components/lib/utils";
 
 import type { ExtractedFacts } from "@/lib/schemas";
 
-function FactRow({ k, v }: { k: string; v: string }) {
+// 4-column dl-cell — matches variant-B-balanced's "Extracted facts" grid
+// (Weight / Age / Severity / Setting). Each cell carries its own dt+dd so
+// screen readers + keyboard nav read the pair naturally.
+function FactCell({
+  k,
+  v,
+  mono = false,
+}: {
+  k: string;
+  v: string;
+  mono?: boolean;
+}) {
   return (
-    <div className="flex items-center justify-between border-b py-1.5 text-[13px] last:border-b-0">
-      <span className="text-muted-foreground">{k}</span>
-      <span className="font-semibold">{v}</span>
+    <div>
+      <dt className="text-[11px] text-muted-foreground">{k}</dt>
+      <dd className={cn("text-[15px] font-semibold", mono && "font-mono")}>
+        {v}
+      </dd>
     </div>
   );
 }
@@ -45,64 +58,85 @@ export function CasePanel({
 }: CasePanelProps) {
   const weight = facts?.weight_kg ?? null;
 
-  return (
-    <aside data-testid="case-panel" className="rounded-xl border bg-card">
-      <div className="border-b bg-muted/40 px-3.5 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        The case
-      </div>
-      <div className="space-y-3 p-3.5">
-        {/* The note (display). whitespace-pre-line keeps transcript line breaks
-            (the dialogue fixtures join with \n) instead of collapsing them. */}
-        <div className="whitespace-pre-line rounded-lg border bg-muted/30 px-3 py-2.5 text-[13px] text-foreground/80">
-          {note.trim().length > 0 ? note : "No note loaded yet."}
-        </div>
+  // The note still renders here (the case-panel test asserts it does — the
+  // note is "the case"). In the 3-column shell it's a muted secondary block,
+  // not the primary surface, because the rail textarea is the live input.
+  // It's hidden entirely before turn 1 to avoid a leftover empty-state block.
+  const hasNote = note.trim().length > 0;
 
-        {/* Extracted facts. */}
+  return (
+    <aside
+      data-testid="case-panel"
+      className="card-shadow rounded-xl border border-hairline bg-white"
+    >
+      <div className="flex items-center justify-between border-b border-hairline bg-white px-4 py-2.5">
+        <h3 className="text-[12px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Extracted facts
+        </h3>
         {facts && (
-          <div data-testid="extracted-facts">
+          <span className="rounded bg-primary-soft px-1.5 py-0.5 font-mono text-[10px] text-primary-d">
+            LLM extraction
+          </span>
+        )}
+      </div>
+      <div className="space-y-3 p-4">
+        {/* Extracted facts — 4-column grid mirroring variant-B-balanced. */}
+        {facts && (
+          <dl
+            data-testid="extracted-facts"
+            className="grid grid-cols-2 gap-x-4 gap-y-3 text-[13px] sm:grid-cols-4"
+          >
+            {weight !== null && <FactCell k="Weight" v={`${weight} kg`} mono />}
+            {facts.age && <FactCell k="Age" v={facts.age} />}
+            {facts.severity && <FactCell k="Severity" v={facts.severity} />}
             {facts.condition_hints[0] && (
-              <FactRow k="Condition" v={facts.condition_hints[0]} />
+              <FactCell k="Condition" v={facts.condition_hints[0]} />
             )}
-            {facts.severity && <FactRow k="Severity" v={facts.severity} />}
-            {facts.age && <FactRow k="Age" v={facts.age} />}
-            {weight !== null && <FactRow k="Weight" v={`${weight} kg`} />}
-          </div>
+          </dl>
         )}
 
-        {/* CONFIRM-WEIGHT — the human owns the safety-critical input. Amber-tinted
-            so it reads as a deliberate safety step, not decoration. */}
+        {/* CONFIRM-WEIGHT — the human owns the safety-critical input. Now a
+            primary-filled button when pending (matches variant), and emerald
+            confirmation strip when done. */}
         {facts && weight !== null && (
-          <div
-            data-testid="confirm-weight"
-            className={cn(
-              "rounded-lg border px-3 py-2.5 text-[12.5px]",
-              weightConfirmed
-                ? "border-emerald-300 bg-emerald-50 text-emerald-900 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-100"
-                : "border-safety-border bg-safety text-safety-foreground",
-            )}
-          >
+          <div data-testid="confirm-weight">
             {weightConfirmed ? (
-              <span className="flex items-center gap-1.5 font-medium">
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-[12.5px] font-medium",
+                  "border-emerald-300 bg-emerald-50 text-emerald-900",
+                  "dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-100",
+                )}
+              >
                 <CheckCircle2 className="size-4 text-emerald-600" />
                 Weight confirmed: {weight} kg
               </span>
             ) : (
-              <>
-                <p>
-                  <span className="font-semibold">Confirm weight</span> before
-                  dosing — the human owns the safety-critical input.
-                </p>
-                <Button
-                  size="sm"
-                  className="mt-2"
-                  data-testid="confirm-weight-button"
-                  onClick={onConfirmWeight}
-                >
-                  ✓ Confirm {weight} kg
-                </Button>
-              </>
+              <Button
+                size="sm"
+                className="gap-1.5 rounded-lg"
+                data-testid="confirm-weight-button"
+                onClick={onConfirmWeight}
+              >
+                <CheckCircle2 className="size-3.5" aria-hidden />
+                Confirm {weight} kg
+              </Button>
             )}
           </div>
+        )}
+
+        {/* The note still renders (the case-panel test asserts it), but de-
+            emphasized: it's a secondary surface in the 3-column shell because
+            the rail textarea is the live input. */}
+        {hasNote && (
+          <details className="rounded-lg border border-hairline bg-muted/30">
+            <summary className="cursor-pointer select-none px-3 py-1.5 text-[11px] font-medium text-muted-foreground">
+              View raw note
+            </summary>
+            <div className="whitespace-pre-line border-t border-hairline px-3 py-2.5 text-[12.5px] text-foreground/80">
+              {note}
+            </div>
+          </details>
         )}
       </div>
     </aside>

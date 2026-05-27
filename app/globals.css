@@ -46,6 +46,15 @@
   --color-safety-foreground: var(--safety-foreground);
   --color-safety-border: var(--safety-border);
   --color-safety-accent: var(--safety-accent);
+  /* Bluey 3-column shell tokens (DESIGN.md § "UI refresh — Bluey").
+     primary-soft = active rail-row fill + tag backgrounds
+     primary-d    = darker primary used for text on the soft tint
+     rail-bg      = the left rail surface (white over the pastel canvas)
+     hairline     = the cool-gray border running throughout the shell */
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-d: var(--primary-d);
+  --color-rail-bg: var(--rail-bg);
+  --color-hairline: var(--hairline);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -56,29 +65,37 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
+  /* Bluey 3-column shell — pastel-blue palette. Hex values pulled directly
+     from variant-B-balanced.html so a side-by-side visual diff against the
+     mockup is exact. (The original neutral-gray oklch values are documented
+     in git history if we ever want to roll back to monochrome.) */
+  --background: #e8f1f7;            /* pastel-blue canvas */
+  --foreground: #1e293b;            /* slate-800 — primary text */
+  --card: #ffffff;
+  --card-foreground: #1e293b;
+  --popover: #ffffff;
+  --popover-foreground: #1e293b;
+  --primary: #3c8dc0;               /* the accent — CTAs, active state, focus */
+  --primary-foreground: #ffffff;    /* white-on-primary on filled buttons */
+  --primary-d: #2d6f9c;             /* darker primary — text on tinted bg */
+  --primary-soft: #eaf3f9;          /* active rail-row fill, tag backgrounds */
+  --secondary: #f4f9fc;             /* hover wash on rail items */
+  --secondary-foreground: #1e293b;
+  --muted: #f1f5f9;                 /* slate-100 — muted chip backgrounds */
+  --muted-foreground: #64748b;      /* slate-500 */
+  --accent: #eaf3f9;
+  --accent-foreground: #2d6f9c;
+  --destructive: oklch(0.577 0.245 27.325);  /* red — reserved for tech errors only */
   /* Safety accent (amber). Values match mockups/structured.html .safety. */
   --safety: #fdf4e3; /* amber background */
   --safety-foreground: #8a5a0f; /* amber text/heading (AA on the amber bg) */
   --safety-border: #ecd5a3; /* amber border */
   --safety-accent: #d99a2b; /* amber left-rule / icon */
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: #dbe7f0;                /* cool-gray hairline */
+  --input: #dbe7f0;
+  --ring: #3c8dc0;                  /* focus ring matches primary */
+  --hairline: #dbe7f0;              /* explicit alias for the shell's borders */
+  --rail-bg: #ffffff;               /* left-rail surface (white over canvas) */
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -143,5 +160,32 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+/* Bluey 3-column shell — utility classes the variant-B mockup leans on.
+   .card-shadow is the subtle elevation for center-column cards (1px hairline
+   + 6px-tall soft drop). .dose-hero is the gradient panel for the Turn 2
+   dose headline in the Evidence panel. */
+.card-shadow {
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 0.04),
+    0 2px 6px -3px rgb(15 23 42 / 0.06);
+}
+.dose-hero {
+  background: linear-gradient(180deg, #f4faff 0%, #e8f1f7 100%);
+}
+
+/* Bluey 3-column shell — narrow-viewport toggle (eng-review lock #7).
+   CSS-only swap, no JS matchMedia listener (avoids hydration mismatch).
+   - ≥ 1100px : the 3-column shell renders, the banner is hidden.
+   - < 1100px : the shell is hidden, the "open on a larger screen" banner shows.
+   Demo is desktop-only by design — the 3-column reading-grammar IS the product. */
+@media (max-width: 1099px) {
+  .bluey-shell {
+    display: none !important;
+  }
+  .narrow-viewport-banner {
+    display: flex !important;
   }
 }

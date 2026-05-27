@@ -3,6 +3,27 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use `MAJOR.MINOR.PATCH.MICRO`.
 
+## [1.3.0.0] - 2026-05-27
+
+Bluey 3-column console shell — the UI the Heidi brief asked for. The canvas is now a proper three-panel desktop layout (272px rail · 1fr case canvas · 392px evidence panel) locked to the Bluey pastel-blue brand palette. The left rail owns the entry-point grammar: demo cases are avatar-tiled rows with `aria-current` tracking, the paste textarea and Run button live there too. The center canvas shows differential + advisory + decision gate; the right panel shows evidence (Turn 2 output). The Bluey heeler SVG replaces the old Geist wordmark. Inter replaces Geist Sans. The page title is now "Bluey · Clinical care partner". The layout is CSS-grid only — no JS breakpoint, no hydration mismatch, a single `@media (max-width: 1099px)` rule hides the shell and shows a narrow-viewport banner. All 353 tests pass including 9 new eng-review-locked regression tests that pin the shell's structural invariants.
+
+### Added
+- **`app/console/rail.tsx`** — 272px left rail. BlueyHeeler brand mark, demo-case avatar rows (each `data-demo-id`, `aria-current`), paste textarea + Run button, version footer. The entry-point grammar from DESIGN.md §"UI refresh — Bluey".
+- **`app/console/case-canvas.tsx`** — 1fr centre column. Patient header strip, status pill, CasePanel (always rendered), empty state ("Pick a case to begin."), Turn 1 phase / refusal / error, Turn 1.5 advisory, Turn1DecisionGate. Receives all state via props; no own state.
+- **`app/console/evidence-panel.tsx`** — 392px right panel. "Evidence" header, Turn 2 output (Turn2View), empty state ("Evidence will appear here when you select a guideline."). No collapse button — eng-review lock #8.
+- **`components/icons/bluey-heeler.tsx`** — IP-safe geometric heeler SVG. `aria-label="Bluey"`, `fill="currentColor"`. Original geometric design, distinct from Ludo Studio's character.
+- **9 regression tests** in `app/console/bluey-shell.regression.test.tsx` — 6 mandatory eng-review locks (grid widths, heeler in rail, page title, demo buttons in rail, paste textarea in rail, canvas empty-state copy) + 3 high-value tests (activeDemoId flip, activeDemoId clears on paste-run, BlueyHeeler SVG attributes).
+
+### Changed
+- **`app/console/console.tsx`** — rewritten as state-owner only. Adds `activeDemoId` state; `onRunDemo` sets it, `onRunPaste` clears it. Returns `<div data-testid="bluey-shell" className="bluey-shell grid h-screen w-full grid-cols-[272px_1fr_392px]">` wrapping Rail/CaseCanvas/EvidencePanel, plus the narrow-viewport banner sibling.
+- **`app/globals.css`** — pastel-blue `:root` tokens (`--background: #e8f1f7`, `--primary: #3c8dc0`, `--primary-soft`, `--primary-d`, `--hairline`, `--rail-bg`). `@theme inline` aliases for Tailwind arbitrary values. `card-shadow` + `dose-hero` utility classes. `@media (max-width: 1099px)` narrow-viewport toggle.
+- **`app/layout.tsx`** — `Inter` replaces `Geist` (Geist_Mono kept for mono surfaces). Title: `"Bluey · Clinical care partner"`.
+- **`app/console/case-panel.tsx`** — header "The case" → "Extracted facts"; raw note moved to `<details>` collapsible; confirm-weight button is primary-filled; `<aside>` → `<section>` label kept stable for test compatibility.
+- **`app/console/turn1-view.tsx`** — each condition is its own `card-shadow` article. Likelihood pill: `likely` → `bg-primary-soft text-primary-d` (was emerald). Decision gate uses `border-2 border-primary` + `Sparkles` icon (was border-dashed). Negative evidence separator is a text node outside `data-negative-evidence` spans.
+- **`app/console/turn2-view.tsx`** — OkView dose container upgraded to `dose-hero card-shadow` gradient panel with `text-[28px]` dose hero; `dose-headline` testid preserved.
+- **`app/console/console.test.tsx`** — 8 one-line edits: label selector updated from `/paste your own note/i` to `/patient note or transcript/i`; case-panel header assertion updated to `/Extracted facts/i`.
+- **`vitest.setup.ts`** — global `next/font/google` mock (`Inter`, `Geist`, `Geist_Mono`) so `app/layout.tsx` can be imported in jsdom tests without the build-time font transform.
+
 ## [1.2.0.0] - 2026-05-27
 
 The clinician's note becomes the safety check. When the input documents the epiglottitis discriminators (drooling, tripod posture, muffled voice) as absent, the system now sees that and stops asking the same clarifying question over and over — it goes straight to the dose. This was the "static question" complaint Josh hit in live QA: the differential read absent findings, but the downstream gate matched by string identity against the registry's canonical strings, and the LLM's paraphrases ("no drooling documented", "voice not muffled") never matched. The fix is a deterministic note scanner that grounds findings to the registry before the LLM ever sees them, and a server-side rewrite that forces the LLM's `negative_evidence` to use the canonical strings. The deterministic spine reaches one layer further up the pipe.

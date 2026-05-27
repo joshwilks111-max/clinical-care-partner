@@ -38,7 +38,9 @@ describe("Console — demo buttons (X5, no typing)", () => {
     // textarea (Task B — proves free-form intake) but NOT a chat composer: no
     // message/ask placeholder, no send button. The paste box runs the same
     // turn-1 flow as the demos; it is not a conversational message channel.
-    expect(screen.getByLabelText(/paste your own note/i)).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(/patient note or transcript/i),
+    ).toBeInTheDocument();
     expect(
       screen.queryByPlaceholderText(
         /^type a message|ask anything|send a message/i,
@@ -52,7 +54,9 @@ describe("Console — demo buttons (X5, no typing)", () => {
   it("renders the LEFT case panel (two-panel layout)", () => {
     render(<Console />);
     expect(screen.getByTestId("case-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("case-panel")).toHaveTextContent(/The case/i);
+    expect(screen.getByTestId("case-panel")).toHaveTextContent(
+      /Extracted facts/i,
+    );
   });
 });
 
@@ -96,7 +100,7 @@ describe("Console — refusal flow (amber)", () => {
 describe("Console — paste-your-own intake (Task B, free-form note/transcript)", () => {
   it("renders the labelled textarea and a disabled Run until text is entered", () => {
     render(<Console />);
-    const ta = screen.getByLabelText(/paste your own note/i);
+    const ta = screen.getByLabelText(/patient note or transcript/i);
     expect(ta).toBeInTheDocument();
     const run = screen.getByTestId("paste-run");
     // Empty draft → Run disabled (no accidental empty POST).
@@ -123,7 +127,7 @@ describe("Console — paste-your-own intake (Task B, free-form note/transcript)"
     // the inner content exactly — that is the precise "verbatim" guarantee.
     const inner = "Parent: barky cough, stridor at rest. Doctor: weight?";
     const typed = `\n  ${inner}  \n`;
-    fireEvent.change(screen.getByLabelText(/paste your own note/i), {
+    fireEvent.change(screen.getByLabelText(/patient note or transcript/i), {
       target: { value: typed },
     });
     fireEvent.click(screen.getByTestId("paste-run"));
@@ -151,7 +155,7 @@ describe("Console — paste-your-own intake (Task B, free-form note/transcript)"
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Console />);
-    const ta = screen.getByLabelText(/paste your own note/i);
+    const ta = screen.getByLabelText(/patient note or transcript/i);
     fireEvent.change(ta, { target: { value: "barky cough, no weight" } });
     fireEvent.keyDown(ta, { key: "Enter", ctrlKey: true });
 
@@ -251,7 +255,7 @@ describe("Console — paste-your-own intake (Task B, free-form note/transcript)"
     );
 
     // New run via paste → refusal. The stale DOSE result must clear.
-    fireEvent.change(screen.getByLabelText(/paste your own note/i), {
+    fireEvent.change(screen.getByLabelText(/patient note or transcript/i), {
       target: { value: "different note, still no weight" },
     });
     fireEvent.click(screen.getByTestId("paste-run"));
@@ -275,7 +279,7 @@ describe("Console — paste-your-own intake (Task B, free-form note/transcript)"
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Console />);
-    const ta = screen.getByLabelText(/paste your own note/i);
+    const ta = screen.getByLabelText(/patient note or transcript/i);
     fireEvent.change(ta, { target: { value: "   \n  " } });
     fireEvent.keyDown(ta, { key: "Enter", metaKey: true }); // Mac path too
     // Give any erroneous async call a tick to fire; assert none did.
