@@ -97,11 +97,22 @@ describe("calculate_dose — DESIGN.md demo cases (real registry rules)", () => 
     );
   });
 
-  it("CASE 3 (generalise): anaphylaxis 14.2 kg → dose_mg 0.14, dose_ml 0.14, route IM", () => {
+  // CASE 3 (generalise): the original assertion ran adrenaline 0.01 mg/kg
+  // through the real ASCIA registry rule. v3.1 retires the anaphylaxis
+  // guideline (deferred per TODOS), so the same arithmetic is now exercised
+  // against a stub rule with identical parameters. Coverage intent is
+  // unchanged: nearest-0.01 rounding + mg→mL derivation via concentration.
+  it("CASE 3 (generalise via stub): 0.01 mg/kg × 14.2 kg → 0.14 mg / 0.14 mL at 1.0 mg/mL, IM", () => {
     const r = expectSuccess(
-      calculate_dose(
-        "ascia-anaphylaxis-2024",
-        "anaphylaxis-adrenaline-im",
+      calculateDoseFromRule(
+        stubRule({
+          drug: "adrenaline",
+          mg_per_kg: 0.01,
+          max_mg: 0.5,
+          route: "IM",
+          concentration_mg_per_ml: 1.0,
+          rounding: { direction: "nearest", increment_mg: 0.01 },
+        }),
         14.2,
       ),
     );
@@ -280,11 +291,14 @@ describe("GUARD-8 — rounding applied from the rule (data, not inference)", () 
     expect(r.dose_mg).toBe(2.13);
   });
 
-  it("round NEAREST 0.01: 0.142 → 0.14 (real anaphylaxis rule)", () => {
+  it("round NEAREST 0.01: 0.142 → 0.14 (stub mirroring the retired anaphylaxis rule)", () => {
     const r = expectSuccess(
-      calculate_dose(
-        "ascia-anaphylaxis-2024",
-        "anaphylaxis-adrenaline-im",
+      calculateDoseFromRule(
+        stubRule({
+          mg_per_kg: 0.01,
+          max_mg: 0.5,
+          rounding: { direction: "nearest", increment_mg: 0.01 },
+        }),
         14.2,
       ),
     );
