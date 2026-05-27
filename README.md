@@ -383,7 +383,7 @@ The next-sharpest genuinely-deferred beats:
 ├── scripts/             # dev utilities: draft-turn15-trace, measure-prompt-tokens
 ├── app/                 # Next.js App Router
 │   ├── api/turn1/ + api/turn1.5/ + api/turn2/   # judgment / advisory-collapse / execution handlers (runtime=nodejs)
-│   └── console/              # the structured two-panel care-partner console (not a chatbot)
+│   └── console/              # the Bluey 3-column care-partner shell (rail · case-canvas · evidence-panel; not a chatbot)
 ├── components/          # shadcn/ui base + AI Elements leaf components (Tool, Sources, InlineCitation)
 ├── tests/evals/         # Promptfoo suite (10 cases: 6 demo + injection + no-guideline + 2 collapse) + sample-output.txt + LLM-judge hook
 ├── docs/architecture.md # the one-page judgment-up / execution-down diagram
