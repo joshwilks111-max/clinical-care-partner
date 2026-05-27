@@ -556,3 +556,123 @@ Decision audit trail + per-phase task lists in `~/.gstack/projects/gifted-ishiza
 | 16 | DX | research/ as P0 + evidence-map README (9 sections) | USER GATE | P1 completeness | Protects "defensible README" success criterion |
 | 17 | DX | npm run eval, .env.example, .nvmrc, named checks | Mechanical | P5 explicit | Removes reviewer setup friction |
 | 18 | DX | 1-click pre-filled demo buttons; stack line resolved post-spike | Mechanical | P5 explicit | Deterministic demo; repo not ambiguous at submission |
+
+---
+
+## UI refresh — Bluey 3-column shell (Step 2a, 2026-05-27)
+
+**Status:** Visual rebrand only. The judgment→execution architecture, safety semantics, demo wiring, Zod contracts, refusal gates, and Vitest suite are **unchanged**. This section is a delta on top of "UI states" above — the shape changes; the contract doesn't.
+
+**Memorable thing (one line):** *"Heidi sibling, built-for-clinicians."* A clinician opens the console and recognizes the chassis instantly.
+
+**Approved variant:** Variant B — balanced sibling-of-Heidi. Mockup + comparison board at `~/.gstack/projects/joshwilks111-max-clinical-care-partner/designs/bluey-3col-20260527-131725/` (variant-B-balanced.html is the canonical source; approved.json is the decision record). Three variants were generated via /design-consultation (HTML fallback because OpenAI gpt-image-1 is org-verification-gated on this account); the personality dial spread A→B→C maps to monogram → recognizable heeler → friendly-with-character. B was picked because it threads "memorable" without taking risk that could fight the amber safety alerts in the Loom money-shots.
+
+### Layout — 3-column grid (locked)
+
+`grid-template-columns: 272px 1fr 392px` on `min-h-screen`. Each column scrolls independently.
+
+- **LEFT RAIL (272px)** — replaces the current "demo buttons + paste-own above the workspace" block. The rail is now the entry point.
+  - Brand block at top: heeler SVG in a 36px rounded tile + "Bluey" wordmark + "Clinical care partner" caption. Heeler is original SVG (perked ears, snout, nose dot, tail) — explicitly NOT Ludo Studio's Bluey design.
+  - Note-paste textarea lives **inside the rail** (rows=6, ⌘/Ctrl+Enter to run, Run button = "Build differential →"). This is a deliberate departure from Heidi (which puts the note in the canvas): in Bluey the rail IS the input, mirroring Heidi's session-list pattern at the entry-point.
+  - "Demo cases" header with count badge, then the 6 demo buttons as session-list-style rows: dot indicator + label + 1-line caption. Active row uses pastel-blue fill (`#eaf3f9`) + filled blue dot.
+  - Footer: `v1.0.0 · claude-opus-4-7` in mono.
+- **CENTER (1fr, target reading width ~720px)** — the scribe canvas.
+  - Patient header strip (`Case · Jack T. · 3 years · 14.2 kg`) + Turn-1 status pill (animated dot).
+  - "Extracted facts" card — 4-column dl (Weight / Age / Severity / Setting) + "Confirm extracted weight" CTA.
+  - "Differential diagnosis" — ranked condition cards. Each card has condition name + likelihood pill (likely/must-not-miss/possible) + "Supports:" + "Findings absent / not documented:" rows.
+  - Guideline selector — `border-2 border-primary` card with "Your turn — select the guideline to apply" header + the candidate buttons.
+- **RIGHT POP-UP (392px)** — the Evidence panel. Mirrors Heidi Evidence's right-side pop-up.
+  - "Evidence" header + Turn-2 badge.
+  - Dose result hero — gradient panel, dose mg in `text-[34px] heading font-bold`, drug+route below, dose-trace mono in inset card.
+  - Provenance seam (4-row table of routed values).
+  - Verbatim citation block (italic, pastel-blue background).
+  - Completeness check (4/4 present, pill counter + checkmark list).
+  - Empty state when Turn 2 hasn't run: "Evidence will appear here when you select a guideline."
+
+### Color tokens (light mode — primary)
+
+```css
+:root {
+  --background:        #e8f1f7;  /* pastel-blue canvas */
+  --card:              #ffffff;
+  --primary:           #3c8dc0;  /* accent — active state, focus ring, CTAs */
+  --primary-d:         #2d6f9c;  /* primary darker, used for text on tinted bg */
+  --primary-soft:      #eaf3f9;  /* active-row fill, tag backgrounds */
+  --foreground:        #1e293b;  /* slate-800 */
+  --muted-foreground:  #64748b;  /* slate-500 */
+  --border:            #dbe7f0;  /* hairline blue-grey */
+  --ring:              #3c8dc0;  /* same as primary */
+  /* SAFETY ACCENT — UNCHANGED, load-bearing (Decision Audit #4) */
+  --safety:            #fdf4e3;
+  --safety-foreground: #8a5a0f;
+  --safety-border:     #ecd5a3;
+  --safety-accent:     #d99a2b;
+  /* DESTRUCTIVE — UNCHANGED, red stays red for tech errors */
+}
+```
+
+Dark-mode tokens deferred — light mode only for v1 demo. Existing dark-mode block in `globals.css` stays untouched but unused on prod.
+
+### Typography (locked)
+
+- **Family:** Inter (added via `https://rsms.me/inter/inter.css` or `next/font/google`).
+- **Mono (unchanged):** Geist Mono for dose trace, routed ids, version strings.
+- **Scale:** kicker labels `text-[10.5px]` uppercase tracking-wider · body `text-[13px]` · card titles `text-[15px]` · patient header `text-[22px] font-semibold` · dose hero `text-[34px] font-bold leading-none`.
+- **`letter-spacing: -0.01em` on headings** (font-feature-settings ss03 optional).
+
+### Spacing + radii
+
+- **Base unit:** 4px.
+- **Card padding:** `p-4` (16px) center column, `p-5` (20px) right pop-up, `px-4 py-2.5` rail items.
+- **Card radii:** `rounded-xl` (12px) center cards, `rounded-lg` (8px) inner panels, `rounded-md` (6px) inputs/buttons.
+- **Card gap:** `gap-3` (12px) in the center column, `gap-4` (16px) in the right pop-up.
+
+### Logo plan — IP-safe
+
+- The variant-B SVG (paths in the file) ships as-is for v1. It's an original geometric heeler — distinct from Ludo Studio's Bluey character — at 28×28px in a 36×36 rounded-xl tile filled `var(--primary-soft)`.
+- **Do not** import any Bluey TV-show asset, BL3.png, or any Ludo Studio illustration. Provenance check before merge: the only image asset added to `public/` should be the heeler SVG (or none, if it stays inline).
+- For production polish, commission a vector or pull a CC0/MIT heeler silhouette. Inline SVG is shippable today.
+
+### Display-name vs deploy-slug rule
+
+- **Display name in the UI:** "Bluey" (header wordmark, page `<title>`, header h1).
+- **Page subtitle:** "Clinical care partner" (replaces "Clinical decision support · judgment up, execution down" in the current header).
+- **Package + deploy slug unchanged:** `clinical-care-partner` (Vercel project, package.json name, the live URL `clinical-care-partner.vercel.app`). The Vercel project is not git-connected (see project memory `vercel-not-git-connected.md`) — promotion is via `vercel deploy --prod --yes`.
+
+### Empty state — center column
+
+When `turn1 === null && busy === null`, the center column shows a Heidi-style "Ready when you are" empty state — not the current `border-dashed bg-muted/20` block. Copy: **"Ready when you are."** + caption: **"Paste a note in the left rail, or pick a demo case to start."** Centered, `text-muted-foreground`, ~40px vertical breathing room.
+
+### What does NOT change (preserve from /autoplan #1–18)
+
+- Amber safety accent — exactly as locked. Pastel-blue must not bleed into refusal / cap-fired / completeness-fired / no-guideline alerts.
+- Red `--destructive` reserved for genuine tech errors (Zod parse fail, model unreachable).
+- All 6 demo cases (same `DEMO_NOTES` from `app/console/fixtures.ts`), grouped Notes vs Transcripts — group labels carry across to the rail.
+- Confirm-weight chip on the extracted facts card (the human owns the safety-critical input).
+- Provenance badges and "show the working" dose trace.
+- Two-turn STOP semantics; `CaseState` server-owned contract; structured Zod output on turn 2.
+- All Vitest tests must continue to pass. `data-testid` selectors stay (`demo-buttons`, `paste-own`, `paste-run`, `turn1-refusal`, `turn1-error`, etc.). Move them with the markup, don't remove them.
+
+### Heidi reference tightening (2026-05-27)
+
+Reviewed against an actual Heidi UI screenshot post-variant-pick. The variant + colour direction (Variant B, pastel-blue) is deliberately retained — own visual identity matters more than palette mimicry, and "I'm the care-partner layer, not a Heidi clone" is the right story for the reviewer. Five layout fidelity refinements land within Step 2b polish:
+
+1. Demo rail items use 2-letter avatar tiles (`Cr`, `Rf`, `Cp`, `Ax`, `Cm`, `In`), not dots — mirrors Heidi's session-list grammar exactly.
+2. Rail group headers use `text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground` to match Heidi's date-group headers in scale and weight.
+3. Canvas patient h1 gets a thin metadata strip below: `<timestamp> · Turn 1 building differential · auto-saved` in `text-[11px] text-muted-foreground`.
+4. Canvas footer microcopy strip: `Show working · Audit log · v1.0.0` right-aligned under the guideline selector.
+5. Evidence panel header pattern mirrors Heidi's `Consultation Prep` right panel: title left, collapse-icon button right (visual-only, no behaviour yet — chrome over function).
+
+These are visual fidelity tightening, not new scope. They land within step 5 of STEP-2B-BRIEF.md.
+
+### Implementation contract for Step 2b
+
+A reviewer (Step 2b /dispatch agent) can verify visual correctness by checking, in order:
+1. Page renders 3 columns at 272 / 1fr / 392 on viewport ≥ 1100px (collapse to single column below; deferred — desktop demo first).
+2. `--background` resolves to `#e8f1f7` on the body.
+3. The header `h1` reads "Bluey"; `<title>` reads "Bluey · Clinical care partner".
+4. The note textarea is inside the left rail (DOM-wise a descendant of `<aside>`, not above the main grid).
+5. Heeler SVG renders in the rail header (presence check via `aria-label="Bluey"`).
+6. The Croup demo (`data-demo-id="croup-jack"`) runs end-to-end and produces `2.13 mg` in the right pop-up.
+7. `npx vitest run` is green. `npx tsc --noEmit` is clean.
+

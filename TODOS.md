@@ -22,6 +22,7 @@ Blast radius = a take-home demo, not a deployed clinical system. None is in v1 s
 | 8 | **Scale retrieval** (live guideline service / data partnership / agentic retrieval over a large medical knowledge space; cf. KnowGuard's systematic knowledge-graph exploration, arXiv:2509.24816) | Corpus outgrows the context window | L / M | P3 |
 | 9 | **Production privacy** (on-prem / no-PHI; GDPR/HIPAA) | Real patient data instead of synthetic notes | L / M | P3 (noted as a limitation) |
 | 10 | **Mild "watch / observe" croup arm** (no-steroid management) — every croup path currently routes to a dose; the mild arm is observation/discharge with no drug. Needs a *disposition-only* plan shape (`drug`/`dose` nullable) + a completeness-gate exception for the observation arm. | Adding a non-dosing management arm to any guideline | M / S | P2 (clinician-flagged) |
+| 11 | **Bluey-branded favicon** — replace the default Next.js favicon at `app/favicon.ico` with a Bluey heeler icon (32×32). Source: `components/icons/bluey-heeler.tsx`. Reinforces the brand on browser tab + bookmark; currently the only place the rebrand doesn't land. | Post-Loom polish | XS / XS | P3 |
 
 ## Softened safety posture (calibration debt — F-016/F-018, 2026-05-27)
 
