@@ -163,6 +163,19 @@
   }
 }
 
+/* Bluey 3-column shell — utility classes the variant-B mockup leans on.
+   .card-shadow is the subtle elevation for center-column cards (1px hairline
+   + 6px-tall soft drop). .dose-hero is the gradient panel for the Turn 2
+   dose headline in the Evidence panel. */
+.card-shadow {
+  box-shadow:
+    0 1px 2px rgb(15 23 42 / 0.04),
+    0 2px 6px -3px rgb(15 23 42 / 0.06);
+}
+.dose-hero {
+  background: linear-gradient(180deg, #f4faff 0%, #e8f1f7 100%);
+}
+
 /* Bluey 3-column shell — narrow-viewport toggle (eng-review lock #7).
    CSS-only swap, no JS matchMedia listener (avoids hydration mismatch).
    - ≥ 1100px : the 3-column shell renders, the banner is hidden.

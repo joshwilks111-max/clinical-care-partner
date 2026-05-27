@@ -96,114 +96,168 @@ export function CaseCanvas({
 }: CaseCanvasProps) {
   const empty = turn1 === null && !turn1Busy;
 
+  // Patient-header copy (layout-refinement #3). We render real, dynamic
+  // values from `facts` instead of the variant's hard-coded "Jack T. ·
+  // 3 years · 14.2 kg" — but each piece is optional so the strip degrades
+  // gracefully when the LLM extracts only some fields.
+  const patientPieces: string[] = [];
+  if (facts?.age) patientPieces.push(facts.age);
+  if (facts?.weight_kg !== undefined && facts?.weight_kg !== null) {
+    patientPieces.push(`${facts.weight_kg} kg`);
+  }
+  const patientLine =
+    patientPieces.length > 0 ? patientPieces.join(" · ") : "Active case";
+
+  // Turn status pill copy — mirrors variant ("Turn 1 — building differential",
+  // "Turn 1.5 — checking safety", "Turn 2 — applying guideline").
+  let statusPill: string | null = null;
+  if (turn1Busy) statusPill = "Turn 1 · building differential";
+  else if (turn15Busy) statusPill = "Turn 1.5 · checking safety";
+  else if (turn2Busy) statusPill = "Turn 2 · applying guideline";
+  else if (turn1Ok && !weightConfirmed)
+    statusPill = "Confirm weight to continue";
+  else if (guidelineGateOpen) statusPill = "Awaiting guideline selection";
+
   return (
-    <main className="overflow-y-auto px-7 py-6">
-      <div className="mx-auto max-w-[760px] space-y-4">
-        {/* CasePanel — REUSED inside the canvas (eng-review lock #6, NOT
+    <main className="overflow-y-auto bg-background px-7 py-6">
+      <div className="mx-auto flex min-h-full max-w-[760px] flex-col">
+        {/* PATIENT HEADER STRIP — layout-refinement #3. Always rendered so
+            the canvas has a stable top edge; copy is dynamic. */}
+        <header className="mb-4 flex items-end justify-between border-b border-hairline pb-3">
+          <div>
+            <div className="mb-0.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Active case
+            </div>
+            <h1 className="text-[22px] font-semibold tracking-tight text-foreground">
+              {patientLine}
+            </h1>
+          </div>
+          {statusPill && (
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <span className="size-2 animate-pulse rounded-full bg-primary" />
+              <span>{statusPill}</span>
+            </div>
+          )}
+        </header>
+
+        <div className="flex-1 space-y-4">
+          {/* CasePanel — REUSED inside the canvas (eng-review lock #6, NOT
             renamed). Its <aside> stays the same DOM shape so case-panel.test
             keeps passing. Always rendered: the persistent case-panel surface
             is the visible spine of the workflow (it shows "Extracted facts"
             with placeholder copy before a note loads). */}
-        <CasePanel
-          note={note}
-          facts={facts}
-          weightConfirmed={weightConfirmed}
-          onConfirmWeight={onConfirmWeight}
-        />
+          <CasePanel
+            note={note}
+            facts={facts}
+            weightConfirmed={weightConfirmed}
+            onConfirmWeight={onConfirmWeight}
+          />
 
-        {/* EMPTY STATE — eng-review lock #5 (original copy, not "Ready when
+          {/* EMPTY STATE — eng-review lock #5 (original copy, not "Ready when
             you are."). */}
-        {empty && (
-          <div
-            data-testid="canvas-empty"
-            className="rounded-xl border border-hairline bg-white p-10 text-center"
-          >
-            <h2 className="text-[15px] font-semibold text-foreground">
-              Pick a case to begin.
-            </h2>
-            <p className="mt-1 text-[12.5px] text-muted-foreground">
-              Click a demo case in the rail, or paste a clinical note.
-            </p>
-          </div>
-        )}
-
-        {turn1Busy && <PhaseLoader phase="building-differential" />}
-
-        {turn1?.status === "refusal" && (
-          <Alert variant="safety" data-testid="turn1-refusal">
-            <ShieldAlert />
-            <AlertTitle className="flex items-center gap-2">
-              <span className="font-mono text-[11px] tracking-wide">
-                DELIBERATE ABSTENTION
-              </span>
-            </AlertTitle>
-            <AlertDescription className="text-[13px] font-semibold text-safety-foreground">
-              {turn1.message}
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {turn1?.status === "error" && (
-          <Alert variant="destructive" data-testid="turn1-error">
-            <OctagonX />
-            <AlertTitle>Technical error</AlertTitle>
-            <AlertDescription>{turn1.message}</AlertDescription>
-          </Alert>
-        )}
-
-        {turn1Ok && <Turn1View turn1={turn1Ok} />}
-
-        <div ref={activeStateRef} className="space-y-4">
-          {turn15Busy && <PhaseLoader phase="checking-safety" />}
-
-          {turn15?.status === "ask" && pendingAsk && (
-            <HighImpactQuestionCard
-              target={pendingAsk.target}
-              question={pendingAsk.question}
-              rationaleSummary={pendingAsk.rationale_summary}
-              onAnswer={onAnswerTurn15}
-              onSkip={() => onAnswerTurn15(null)}
-              busy={turn15Busy}
-            />
+          {empty && (
+            <div
+              data-testid="canvas-empty"
+              className="rounded-xl border border-hairline bg-white p-10 text-center"
+            >
+              <h2 className="text-[15px] font-semibold text-foreground">
+                Pick a case to begin.
+              </h2>
+              <p className="mt-1 text-[12.5px] text-muted-foreground">
+                Click a demo case in the rail, or paste a clinical note.
+              </p>
+            </div>
           )}
 
-          {turn15?.status === "ok" && (
-            <NoQuestionNeededBanner
-              rationaleSummary={turn15.rationale_summary}
-              overriddenTarget={turn15.overridden_target}
-              overriddenDiscriminators={turn15.overridden_discriminators}
-            />
-          )}
+          {turn1Busy && <PhaseLoader phase="building-differential" />}
 
-          {turn15?.status === "recorded" && (
-            <AnswerRecordedBanner
-              target={
-                turn15.caseState.discriminating_qa.at(-1)?.target ?? "question"
-              }
-              engaged={
-                turn15.caseState.discriminating_qa.at(-1)?.engaged ?? false
-              }
-            />
-          )}
-
-          {turn15?.status === "error" && (
-            <Alert variant="destructive" data-testid="turn15-error">
-              <OctagonX />
-              <AlertTitle>Advisory check unavailable</AlertTitle>
-              <AlertDescription>{turn15.message}</AlertDescription>
+          {turn1?.status === "refusal" && (
+            <Alert variant="safety" data-testid="turn1-refusal">
+              <ShieldAlert />
+              <AlertTitle className="flex items-center gap-2">
+                <span className="font-mono text-[11px] tracking-wide">
+                  DELIBERATE ABSTENTION
+                </span>
+              </AlertTitle>
+              <AlertDescription className="text-[13px] font-semibold text-safety-foreground">
+                {turn1.message}
+              </AlertDescription>
             </Alert>
           )}
 
-          {guidelineGateOpen && turn1Ok && (
-            <Turn1DecisionGate
-              turn1={turn1Ok}
-              weightConfirmed={weightConfirmed}
-              busy={turn2Busy}
-              recommendedGuidelineId={recommendedGuidelineId}
-              onSelectGuideline={onSelectGuideline}
-            />
+          {turn1?.status === "error" && (
+            <Alert variant="destructive" data-testid="turn1-error">
+              <OctagonX />
+              <AlertTitle>Technical error</AlertTitle>
+              <AlertDescription>{turn1.message}</AlertDescription>
+            </Alert>
           )}
+
+          {turn1Ok && <Turn1View turn1={turn1Ok} />}
+
+          <div ref={activeStateRef} className="space-y-4">
+            {turn15Busy && <PhaseLoader phase="checking-safety" />}
+
+            {turn15?.status === "ask" && pendingAsk && (
+              <HighImpactQuestionCard
+                target={pendingAsk.target}
+                question={pendingAsk.question}
+                rationaleSummary={pendingAsk.rationale_summary}
+                onAnswer={onAnswerTurn15}
+                onSkip={() => onAnswerTurn15(null)}
+                busy={turn15Busy}
+              />
+            )}
+
+            {turn15?.status === "ok" && (
+              <NoQuestionNeededBanner
+                rationaleSummary={turn15.rationale_summary}
+                overriddenTarget={turn15.overridden_target}
+                overriddenDiscriminators={turn15.overridden_discriminators}
+              />
+            )}
+
+            {turn15?.status === "recorded" && (
+              <AnswerRecordedBanner
+                target={
+                  turn15.caseState.discriminating_qa.at(-1)?.target ??
+                  "question"
+                }
+                engaged={
+                  turn15.caseState.discriminating_qa.at(-1)?.engaged ?? false
+                }
+              />
+            )}
+
+            {turn15?.status === "error" && (
+              <Alert variant="destructive" data-testid="turn15-error">
+                <OctagonX />
+                <AlertTitle>Advisory check unavailable</AlertTitle>
+                <AlertDescription>{turn15.message}</AlertDescription>
+              </Alert>
+            )}
+
+            {guidelineGateOpen && turn1Ok && (
+              <Turn1DecisionGate
+                turn1={turn1Ok}
+                weightConfirmed={weightConfirmed}
+                busy={turn2Busy}
+                recommendedGuidelineId={recommendedGuidelineId}
+                onSelectGuideline={onSelectGuideline}
+              />
+            )}
+          </div>
         </div>
+
+        {/* BOTTOM MICROCOPY STRIP — layout-refinement #4. Reinforces "this is
+            a serious tool" the way Heidi's "Provide feedback · 0 tasks" does. */}
+        <footer className="mt-6 flex items-center justify-end gap-3 border-t border-hairline pt-3 text-[11px] text-muted-foreground">
+          <span>Show working</span>
+          <span aria-hidden>·</span>
+          <span>Audit log</span>
+          <span aria-hidden>·</span>
+          <span className="font-mono">v1.2.0</span>
+        </footer>
       </div>
     </main>
   );

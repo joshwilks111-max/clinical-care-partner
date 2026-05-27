@@ -204,32 +204,43 @@ function OkView({ res }: { res: Extract<Turn2Response, { status: "ok" }> }) {
     <section data-testid="turn2-ok" className="space-y-3">
       <StepHeader />
 
-      {/* D1 — dose + drug + route as ONE bold headline, first-thing-visible. */}
-      <Card>
-        <CardContent className="space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Dose
-            </div>
-            <ProvenanceBadge kind="dose-tool" />
+      {/* D1 — dose + drug + route as ONE bold headline, first-thing-visible.
+          Rendered as the Bluey shell's "dose hero" — gradient panel + the dose
+          number at text-[34px] (variant-B-balanced). The dose-headline testid
+          is preserved so the existing turn2-view.test invariant (contains
+          "{dose} mg {drug}" + route) keeps passing — only the wrapper styling
+          changed, not the semantic content. */}
+      <div className="dose-hero card-shadow rounded-xl border border-hairline p-4">
+        <div className="flex items-center justify-between">
+          <div className="font-mono text-[10px] uppercase tracking-wider text-primary-d">
+            Recommended dose
           </div>
-          <div data-testid="dose-headline" className="text-lg font-bold">
-            {dose.dose_mg} mg {dose.drug}
-            <span className="ml-1 text-[13px] font-normal text-muted-foreground">
-              {dose.route}
-              {ml}
-            </span>
+          <ProvenanceBadge kind="dose-tool" />
+        </div>
+        <div
+          data-testid="dose-headline"
+          className="mt-1 text-[28px] font-bold leading-none text-foreground"
+        >
+          {dose.dose_mg} mg {dose.drug}
+          <div className="mt-1.5 text-[13px] font-medium text-foreground/80">
+            {dose.route}
+            {ml}
+          </div>
+        </div>
+        <div className="mt-3 rounded-md border border-hairline bg-white px-2.5 py-2">
+          <div className="mb-1 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+            Dose trace
           </div>
           <DoseTrace trace={dose.calculation_trace} />
-          {dose.data_gaps.length > 0 && (
-            <ul className="list-disc pl-5 text-[12px] text-muted-foreground">
-              {dose.data_gaps.map((g) => (
-                <li key={g}>{g}</li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
+        </div>
+        {dose.data_gaps.length > 0 && (
+          <ul className="mt-2 list-disc pl-5 text-[12px] text-muted-foreground">
+            {dose.data_gaps.map((g) => (
+              <li key={g}>{g}</li>
+            ))}
+          </ul>
+        )}
+      </div>
 
       {/* D7 — recommendations as labeled quote blocks with clickable sources. */}
       <Card>
