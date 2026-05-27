@@ -106,8 +106,14 @@ const cases: Case[] = raw
 /* ─── Structural canaries (these catch refresh mistakes) ──────────────── */
 
 describe("cases.jsonl structural canaries", () => {
-  test("17 cases (12 originals + 5 adversarial)", () => {
-    expect(cases).toHaveLength(17);
+  test("16 cases (11 originals + 5 adversarial; case-8 removed in v3.1 fan-in)", () => {
+    // case-8-fallback-region was deleted in the v3.1 fan-in pass: its
+    // premise ("AU has no native guideline → fall back to NZ") was
+    // invalidated when Lane B added rch-croup-2020 as a first-class AU
+    // guideline. case-2-jack-au now exercises AU directly, so case-8's
+    // coverage is fully subsumed. See the case-2/8/15 reconciliation
+    // commit on this branch for the full reasoning.
+    expect(cases).toHaveLength(16);
   });
 
   test("all case ids are unique", () => {

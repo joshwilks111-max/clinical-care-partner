@@ -39,6 +39,22 @@ export default defineConfig({
       "prompts/turn1.test.ts",
       "prompts/turn1.5.test.ts",
       "prompts/turn2.test.ts",
+      // Legacy console UI tests — coupled to the turn1/turn1.5/turn2 console
+      // state machine that P3.5 replaces with the Heidi-grammar 3-column shell
+      // + ChatPanel. These tests:
+      //   - console.test.tsx              asserts "no chat composer exists" (negated by v3.1)
+      //   - bluey-shell.regression.test.tsx  pins old grid widths + Bluey heeler branding
+      //   - safety-check-card.test.tsx     drives the test by clicking legacy [data-demo-id]
+      //                                    buttons on <Console />; once Console is rewritten,
+      //                                    the driver breaks even though safety-check-card.tsx
+      //                                    itself survives. Rewrite this test against the new
+      //                                    Console after P3.5 (or scope to safety-check-card
+      //                                    component in isolation).
+      // All three are slated for delete (console + bluey + their fixtures) or rewrite
+      // (safety-check-card) after Phase 3 step 11. Drop these excludes then.
+      "app/console/console.test.tsx",
+      "app/console/bluey-shell.regression.test.tsx",
+      "app/console/safety-check-card.test.tsx",
     ],
   },
 });
