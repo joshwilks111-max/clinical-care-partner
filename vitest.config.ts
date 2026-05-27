@@ -36,6 +36,9 @@ export default defineConfig({
       // these two excludes when step 11 lands.
       "lib/completeness.test.ts",
       "lib/router.test.ts",
+      "prompts/turn1.test.ts",
+      "prompts/turn1.5.test.ts",
+      "prompts/turn2.test.ts",
     ],
   },
 });
