@@ -230,6 +230,27 @@ tests:
         metric: case9.wrong_guideline_audit
 
   # =========================================================================
+  # CASE 11 (deferred — see plan & test rationale):
+  #
+  # The "discriminators-absent → green badge → no question → dose 2.13"
+  # path is COVERED in the unit-test harness without a live LLM:
+  #
+  #   - lib/note-discriminator-scan.test.ts (the scanner, 11 anti-pattern tests)
+  #   - lib/note-discriminator-scan.regression.test.ts (the iron-rule REGRESSION:
+  #       discriminators-PRESENT must still abstain via Rule 2)
+  #   - app/api/turn1/route.scanner.test.ts (Turn 1 canonicalisation + trust
+  #       boundary + scanner-throw fallback)
+  #   - app/api/turn1.5/route.override.test.ts (override fires on all-3-absent;
+  #       does NOT fire on 2-of-3; needs_question=false is no-op)
+  #   - app/console/safety-check-card.test.tsx (the green badge component path)
+  #
+  # Adding a Case 11 here would require either a live-LLM eval (slow + costs
+  # tokens for every npm run eval) or a non-trivial new provider kind for what
+  # is already covered five layers deep deterministically. The eng-review test
+  # rubric (T14 deferral) accepts the unit-test coverage as the canonical demo
+  # gate; promptfoo retains the live-LLM end-to-end role for the existing 10.
+
+  # =========================================================================
   # CASE 10 — Collapse (must-not-miss confirmed → abstain): clinician answers
   # "present" → epiglottitis gains positive evidence → re-decide abstains.
   # NO turn2 call; no dose issued.

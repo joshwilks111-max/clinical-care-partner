@@ -161,8 +161,12 @@ function isTreatableTop(
  * toddler" on the must-not-miss Foreign body aspiration). Exact set-membership
  * misses these; normalized substring containment catches them. The brittleness
  * was discovered live during F-018 QA (see TODOS.md "softened safety posture").
+ *
+ * Exported (was file-local) so lib/note-discriminator-scan.ts can normalize
+ * note tokens with the same contract — keeps the scanner and demoteSharedFindings
+ * in lockstep on what "same string" means.
  */
-function normFinding(s: string): string {
+export function normFinding(s: string): string {
   return s
     .toLowerCase()
     .trim()

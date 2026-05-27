@@ -29,6 +29,11 @@ import { POST } from "./route";
 import type { CaseState } from "@/lib/case-state";
 import type { Differential } from "@/lib/schemas";
 
+// NOTE: epiglottitis.negative_evidence has 2-of-3 registry discriminators
+// (NOT all 3). This is the fixture for the "ask" path — when only some
+// discriminators are documented absent, the override does NOT fire and the
+// question still gets asked to flip the remaining one. The override path
+// (all-3-absent) is pinned in route.override.test.ts.
 const croupEpiglottitisDiff: Differential = {
   conditions: [
     {
@@ -41,7 +46,7 @@ const croupEpiglottitisDiff: Differential = {
       name: "Epiglottitis",
       likelihood: "must-not-miss",
       positive_evidence: [],
-      negative_evidence: ["drooling", "tripod posture", "muffled voice"],
+      negative_evidence: ["drooling", "tripod posture"],
     },
   ],
   candidate_guidelines: [

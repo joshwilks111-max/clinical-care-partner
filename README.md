@@ -79,6 +79,22 @@ human-in-the-loop mechanism: native round-trips, each independently reproducible
 `CaseState` carrying turn 1's confirmed outputs forward (zero re-extraction). The diagram draws that
 boundary as a visible seam.
 
+**ConText/NegEx assertion pre-pass (v1.2.0.0).** Inside Turn 1, a deterministic note scanner
+([`lib/note-discriminator-scan.ts`](lib/note-discriminator-scan.ts)) runs after the weight gate and
+before the LLM. For every must-not-miss condition with `discriminator_surface_forms` in the
+registry, it scans the raw note for each canonical discriminator's surface forms and emits
+`present | absent | not_documented` per finding (Chapman 2001 *JAMIA*; Harkema 2009 *JBI* 42:839 —
+named prior art, not invention). Two effects: (a) the Turn 1 prompt receives a trusted
+`REGISTRY-GROUNDED FINDINGS` block listing what the note documented absent, so the LLM uses the
+canonical registry strings verbatim in `negative_evidence`; (b) a server-side canonicalisation pass
+rewrites any LLM paraphrases to the registry strings whenever the scanner positively grounded the
+same finding. The Turn 1.5 override (`shouldOverrideToNoQuestion`) then matches by `Set` identity:
+if every registry discriminator for the target is in `negative_evidence`, the question is skipped
+and the UI surfaces a green "NO CLARIFYING QUESTION NEEDED" badge naming which discriminators
+grounded the override. The deterministic spine now reaches one layer earlier — the note becomes
+the safety check. Generalises by registry data, not code: adding a new must-not-miss condition with
+synonyms needs zero scanner/prompt/route edits (`buildDiscriminatorSurfaceFormMap()` is the lever).
+
 ### Retrieval: whole-document injection — the right tool for a two-document corpus
 
 The brief asks for "basic RAG, agentic AI/MCP **or similar**." This is the "or similar":
@@ -168,13 +184,18 @@ own note/transcript), and the **Refusal** demo needs no key at all.
 npm run eval       # wraps: promptfoo eval -c promptfoo.yaml --no-cache
 ```
 
-The suite is now **10 cases**, last live-verified **10/10 (100%, 0 failed, 0 errors)** on this
-branch (~53k tokens, ~2m41s, run id `eval-VZm-2026-05-26`). It reports **named checks, not an
-aggregate %** — each assertion is its own metric (`case1.dose_mg_2.13`, `case4.capped_true`,
-`case4.binding_limit_12`, `case1.severity_row_moderate`, …), so a silent severity flip or a dropped
-slot fails a *named* check. (A captured run is committed at
-**[`tests/evals/sample-output.txt`](tests/evals/sample-output.txt)**; the artifact reflects the
-current 10-case green run.)
+The suite is **10 cases**, last live-verified **8/10 on v1.2.0.0** (~62k tokens, ~2m48s, run id
+`eval-3PU-2026-05-27`). It reports **named checks, not an aggregate %** — each assertion is its own
+metric (`case1.dose_mg_2.13`, `case4.capped_true`, `case4.binding_limit_12`,
+`case1.severity_row_moderate`, …), so a silent severity flip or a dropped slot fails a *named*
+check. The 2 remaining failures are **pre-existing on `main`, not introduced by v1.2.0.0** —
+case8 is a refusal-taxonomy mislabel (wrong-guideline audit fires before the no-matching branch),
+case10's confirm-present → abstain path became unreachable when v1.1.1.0's Step-2-click bypass
+landed (the eval driver seeds `selected_guideline_id`, which trips the bypass). Both are filed in
+[`TODOS.md`](TODOS.md) §ED1 + §ED2 with concrete fix paths for the next eval cycle.
+(A captured run is committed at **[`tests/evals/sample-output.txt`](tests/evals/sample-output.txt)**;
+the artifact reflects the prior 10-case green run before v1.1.1.0's bypass + v1.2.0.0's grounding
+features changed the eval-driver/override interaction surface.)
 
 Two layers:
 
@@ -326,7 +347,7 @@ scan).
 
 Full list with build triggers: **[`TODOS.md`](TODOS.md)**.
 
-**Delivered on this branch** (formerly the two sharpest "if I had another day" beats — now shipped):
+**Delivered on this branch** (formerly the three sharpest "if I had another day" beats — now shipped):
 
 - **Wrong-guideline auto-abstain guard** — both halves ship. v1 logs the routed `guideline_id`, runs
   the **audit assertion**, *and* abstains on a mismatch with a distinct `wrong_guideline` reason
@@ -335,8 +356,14 @@ Full list with build triggers: **[`TODOS.md`](TODOS.md)**.
 - **Differential-collapse loop (Turn 1.5 advisory rewrite)** — Turn 1.5 is diagnostic-completeness
   assist only (`ask` | `ok` | `recorded` | `error`; no Turn 1.5 abstention). One optional
   high-impact question + recommended guideline; clinician can skip or override. Turn 2 remains the
-  dose gate (case9 rule-out→dose 2.13 mg; case10 must-not-miss confirmed→abstain at Turn 2).
-  Prompt artefacts: `prompts/turn1.5-rewrite.md`, live traces in `prompts/turn1.5-rewrite.traces.md`.
+  dose gate (case9 rule-out→dose 2.13 mg). Prompt artefacts: `prompts/turn1.5-rewrite.md`, live
+  traces in `prompts/turn1.5-rewrite.traces.md`.
+- **ConText/NegEx assertion pre-pass (v1.2.0.0)** — the deterministic note scanner + server-side
+  canonicalisation + Turn 1.5 override + green-badge UI described in §3 above. Closes the
+  string-identity gap between the LLM's paraphrased `negative_evidence` and the registry's
+  canonical discriminators: when the note documents all three epiglottitis discriminators absent,
+  the system sees that and skips the clarifying question. The pattern is named prior art, not
+  invention (ConText/NegEx + investigate-before-abstain).
 
 The next-sharpest genuinely-deferred beats:
 
@@ -364,6 +391,7 @@ The next-sharpest genuinely-deferred beats:
 │   └── guidelines.ts         # the single source of truth; LLM picks a rule by id, never sets numbers
 ├── tools/               # calculate_dose + GUARDs (deterministic; the safety spine)
 ├── lib/                 # router, refusal gate, completeness gate, CaseState, plan schema, retry, condition-key
+│   └── note-discriminator-scan.ts  # ConText/NegEx assertion pre-pass (v1.2.0.0) — pure, no LLM
 ├── prompts/             # turn 1 differential · turn 1.5 advisory (+ sanitizer, rewrite artefacts) · turn 2 apply
 ├── scripts/             # dev utilities: draft-turn15-trace, measure-prompt-tokens
 ├── app/                 # Next.js App Router

@@ -8,6 +8,19 @@ differential and the dose, turn 1.5 is an **advisory** diagnostic check (optiona
 **collapse and dose abstention happen only at the Turn 2 defense-in-depth gate**. The
 seam between judgment and execution is the whole design.
 
+**v1.2.0.0 — the deterministic spine reaches further up.** A ConText/NegEx-style assertion
+pre-pass (Chapman 2001 *JAMIA*; Harkema 2009 *JBI* 42:839) now runs inside Turn 1, between the
+weight gate and the LLM. For every must-not-miss condition with `discriminator_surface_forms`
+in the registry, it grounds findings to `present | absent | not_documented` from the raw note.
+The Turn 1 prompt then receives a trusted `REGISTRY-GROUNDED FINDINGS` block listing what
+was documented absent, and a server-side canonicalisation pass after the LLM returns rewrites
+`negative_evidence` to canonical registry strings wherever the scanner positively grounded the
+same finding. This closes the string-identity gap that previously made Turn 1.5's "is this
+already answered?" check unreliable: when the note documents all the registry discriminators
+absent, the Turn 1.5 override (`shouldOverrideToNoQuestion`) sees the canonical strings and
+emits a green "NO CLARIFYING QUESTION NEEDED" badge naming what grounded the call. The pattern
+is named prior art — *investigate-before-abstain* (KnowGuard, arXiv 2509.24816, ICLR 2026).
+
 ```mermaid
 flowchart TD
     NOTE["Clinical note<br/><b>UNTRUSTED — treated as data, not instructions</b>"]:::untrusted
@@ -16,30 +29,36 @@ flowchart TD
     subgraph T1["TURN 1 · JUDGMENT  (LLM does the thinking)"]
         direction TB
         PRE{"PRE-LLM refusal gate<br/>kg weight present?"}:::gate
-        EXTRACT["LLM: extract facts + build<br/>weighted differential<br/>positive / <b>negative</b> evidence"]:::llm
+        SCAN["ConText/NegEx pre-pass (v1.2.0.0)<br/>scanNote → present / absent / not_documented<br/>per registry discriminator · DETERMINISTIC"]:::det
+        EXTRACT["LLM: extract facts + build<br/>weighted differential<br/>positive / <b>negative</b> evidence<br/>+ REGISTRY-GROUNDED FINDINGS block"]:::llm
+        CANON["canonicaliseDifferentialAgainstGroundings<br/>rewrite negative_evidence to registry strings<br/>DETERMINISTIC · only where scanner grounded"]:::det
         STOP(["STOP · render differential +<br/>candidate-guideline buttons"]):::stop
         CONFIRM["Clinician confirms weight<br/>+ picks the guideline"]:::human
     end
 
     NOTE --> PRE
     PRE -- "no kg weight<br/>(NO model call)" --> RG1["ABSTAIN · weight required<br/><i>never estimate from age</i>"]:::abstain
-    PRE -- "weight present" --> EXTRACT
-    EXTRACT --> STOP --> CONFIRM
+    PRE -- "weight present" --> SCAN --> EXTRACT --> CANON --> STOP --> CONFIRM
 
     %% ───────────────── TURN 1.5 · ADVISORY (LLM judgment + optional Q&A) ─────────────────
     subgraph T15["TURN 1.5 · ADVISORY  (diagnostic-completeness assist · no abstention here)"]
         direction TB
         DECIDE["LLM: recommend treatable condition +<br/>optional high-impact question"]:::llm
+        OVERRIDE{"shouldOverrideToNoQuestion (v1.2.0.0)<br/>all registry discriminators<br/>in negative_evidence?"}:::gate
         ASK["Clinician sees advisory question<br/>(may answer or skip)"]:::human
         ANSWER["applyAnswer → flip evidence<br/>deterministically · logged in discriminating_qa"]:::det
         OK["Advisory ok — no question needed"]:::human
+        OK_GROUNDED["GREEN BADGE · grounded by note<br/>names discriminators all documented absent"]:::ok
     end
 
     CONFIRM --> DECIDE
-    DECIDE -- "needs_question" --> ASK --> ANSWER
+    DECIDE -- "needs_question" --> OVERRIDE
+    OVERRIDE -- "yes · skip question" --> OK_GROUNDED
+    OVERRIDE -- "no · ask" --> ASK --> ANSWER
     DECIDE -- "no question needed" --> OK
     ANSWER --> SEAM
     OK --> SEAM
+    OK_GROUNDED --> SEAM
 
     %% ═══════════ THE BOUNDARY ═══════════
     SEAM{{"═══  judgment ends · execution begins  ═══"}}:::seam

@@ -22,10 +22,7 @@ function jsonResponse(body: unknown): Response {
   return { ok: true, json: async () => body } as Response;
 }
 
-function mockFetch(opts: {
-  turn15?: Turn15Response;
-  turn15Throws?: boolean;
-}) {
+function mockFetch(opts: { turn15?: Turn15Response; turn15Throws?: boolean }) {
   const fetchMock = vi.fn<typeof fetch>(async (input) => {
     const url = String(input);
     if (url === "/api/turn1") return jsonResponse(FIXTURE_TURN1_SUCCESS);
@@ -118,7 +115,9 @@ describe("Console advisory gate — guideline buttons stay visible", () => {
     mockFetch({ turn15: ASK });
     await driveToTurn15();
     await waitFor(() =>
-      expect(screen.getByTestId("high-impact-question-card")).toBeInTheDocument(),
+      expect(
+        screen.getByTestId("high-impact-question-card"),
+      ).toBeInTheDocument(),
     );
     expect(guidelineButton()).toBeInTheDocument();
   });
@@ -159,10 +158,68 @@ describe("AnswerRecordedBanner", () => {
 
 describe("NoQuestionNeededBanner", () => {
   it("renders optional rationale", () => {
-    render(<NoQuestionNeededBanner rationaleSummary="Differential is clear." />);
+    render(
+      <NoQuestionNeededBanner rationaleSummary="Differential is clear." />,
+    );
     expect(screen.getByTestId("turn15-no-question")).toHaveTextContent(
       /NO CLARIFYING QUESTION NEEDED/,
     );
     expect(screen.getByText(/Differential is clear/)).toBeInTheDocument();
+  });
+
+  it("override path: renders grounded discriminators in place of rationale", () => {
+    render(
+      <NoQuestionNeededBanner
+        rationaleSummary="Croup ready to apply."
+        overriddenTarget="Epiglottitis"
+        overriddenDiscriminators={[
+          "drooling",
+          "tripod posture",
+          "muffled voice",
+        ]}
+      />,
+    );
+    // Heading still present.
+    expect(screen.getByTestId("turn15-no-question")).toHaveTextContent(
+      /NO CLARIFYING QUESTION NEEDED/,
+    );
+    // The grounded-discriminator description renders with the canonical strings.
+    const grounded = screen.getByTestId("turn15-no-question-grounded");
+    expect(grounded).toHaveTextContent(/Epiglottitis discriminators/);
+    expect(grounded).toHaveTextContent(/drooling/);
+    expect(grounded).toHaveTextContent(/tripod posture/);
+    expect(grounded).toHaveTextContent(/muffled voice/);
+    expect(grounded).toHaveTextContent(/all documented absent in the note/);
+    // Override description supersedes the rationale.
+    expect(screen.queryByText(/Croup ready to apply/)).not.toBeInTheDocument();
+  });
+
+  it("override-not-populated path: falls back to rationale (existing non-override behaviour)", () => {
+    // overriddenDiscriminators omitted → grounded description does NOT render.
+    render(
+      <NoQuestionNeededBanner rationaleSummary="Generic LLM-said-no rationale." />,
+    );
+    expect(
+      screen.queryByTestId("turn15-no-question-grounded"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/Generic LLM-said-no rationale/),
+    ).toBeInTheDocument();
+  });
+
+  it("empty discriminators array → falls back to rationale (defensive)", () => {
+    render(
+      <NoQuestionNeededBanner
+        rationaleSummary="Fallback rationale."
+        overriddenTarget="Epiglottitis"
+        overriddenDiscriminators={[]}
+      />,
+    );
+    // Empty array is treated as "no override populated" — fail-safe to the
+    // rationale rather than render an empty grounded description.
+    expect(
+      screen.queryByTestId("turn15-no-question-grounded"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(/Fallback rationale/)).toBeInTheDocument();
   });
 });

@@ -376,7 +376,22 @@ stays honest rather than under-claiming.
   `MAX_ROUNDS = 1`): ambiguous differential → turn 1.5 may ask one high-impact clarifying question
   (advisory) → clinician answers or skips → `applyAnswer` flips evidence deterministically →
   Turn 2 runs `demoteSharedFindings` + `decideCollapse` before dosing (collapse or abstain).
-  Eval-proven (case9 rule-out→dose 2.13, case10 must-not-miss-confirmed→abstain).
+  Eval-proven (case9 rule-out→dose 2.13). (case10 confirmed→abstain became unreachable from the
+  current eval driver after v1.1.1.0's Step-2-click bypass landed; tracked in `TODOS.md`§ED2 for
+  the next eval cycle. Defense-in-depth gate against a true hand-crafted POST still works.)
+- **ConText/NegEx assertion pre-pass (v1.2.0.0)** — DELIVERED. The "is this already answered in
+  the note?" check is now deterministic, owned by code rather than LLM judgement. A pure scanner
+  (`lib/note-discriminator-scan.ts`, ~523 LOC, no LLM, no network) grounds each registry
+  discriminator to `present | absent | not_documented` from the raw note. Turn 1's prompt receives
+  a trusted `REGISTRY-GROUNDED FINDINGS` block (registry strings only — zero note bytes cross into
+  the trusted block), and a server-side canonicalisation pass rewrites the LLM's `negative_evidence`
+  to canonical registry strings wherever the scanner grounded the same finding. The Turn 1.5
+  override (`shouldOverrideToNoQuestion`) then matches by `Set` identity: if every registry
+  discriminator for the target condition is in `negative_evidence`, the question is skipped and
+  the UI surfaces a green badge naming what grounded the call. Pattern is named prior art:
+  ConText/NegEx (Chapman 2001 *JAMIA*; Harkema 2009 *JBI* 42:839) + investigate-before-abstain
+  (KnowGuard, arXiv 2509.24816, ICLR 2026). Generalises by registry data, not code — adding a new
+  must-not-miss condition with surface forms needs zero scanner/prompt/route edits.
 
 ## Deliberately deferred (TODO / talking points — the depth signal)
 
