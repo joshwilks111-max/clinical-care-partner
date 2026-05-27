@@ -33,7 +33,10 @@ export default function RootLayout({
       lang="en"
       className={`${inter.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col bg-background text-foreground">
+      {/* The 3-column shell owns its own h-screen — the body is just the
+          neutral surface behind it. flex-col is removed so the shell can fill
+          the viewport without competing with a stack model. */}
+      <body className="min-h-full bg-background text-foreground">
         {children}
       </body>
     </html>

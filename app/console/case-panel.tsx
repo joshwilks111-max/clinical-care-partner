@@ -48,7 +48,7 @@ export function CasePanel({
   return (
     <aside data-testid="case-panel" className="rounded-xl border bg-card">
       <div className="border-b bg-muted/40 px-3.5 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-        The case
+        Extracted facts
       </div>
       <div className="space-y-3 p-3.5">
         {/* The note (display). whitespace-pre-line keeps transcript line breaks
