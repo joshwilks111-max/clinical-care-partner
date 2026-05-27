@@ -1,231 +1,264 @@
 // app/console/console.tsx
 //
-// The 3-column Bluey shell — state owner only (eng-review lock #3).
+// The v3.1 Heidi-grammar 3-column console — state owner only.
 //
-// Console owns: note, draft, turn1, turn2, weightConfirmed, busy, and the new
-// activeDemoId (lock #9). It composes three presentational children:
+// Console composes three Lane F presentational children, owns the chat
+// thread state, and drives a single transport (POST /api/chat). The
+// legacy turn1/turn1.5/turn2 orchestration is GONE; everything routes
+// through the streamText harness.
 //
-//   <Rail>            — brand block + paste textarea + 6 demo cases.
-//   <CaseCanvas>      — CasePanel + turn1 + turn1.5 + decision gate.
-//   <EvidencePanel>   — turn2 result (or empty state).
+//   <SessionRail>  (LEFT, 220px)  — 5 demo cases, click → load note + reset chat
+//   <NotePane>     (CENTRE, 1fr)  — note textarea + extracted-facts accordion
+//   <ChatPanel>    (RIGHT, 520px) — thread + composer + suggested prompts
 //
-// Below the 1100px breakpoint the grid collapses to a single-column banner
-// (lock #7, CSS-only — no JS matchMedia, no hydration-mismatch risk).
+// State owned here:
+//   - messages: ChatMessage[]            — the chat thread (user + assistant turns)
+//   - note: string                       — the centre-pane note content
+//   - originalNote: OriginalNoteSummary  — derived chip for the composer (D13)
+//   - isStreaming: boolean               — true while POST /api/chat is in flight
+//   - activeSessionId: string | null     — for the SessionRail active-row styling
 //
-// Clinical behaviour is unchanged from pre-Bluey: same /api/turn1, /api/turn1.5,
-// /api/turn2 calls; same CaseState contract; same gateOpen invariant; same
-// scroll-into-view on turn-1.5/turn-2 status transitions.
+// Transport (postChat helper at bottom): builds the messages array for
+// /api/chat, awaits the streaming response, parses the X-Validated-Response
+// header populated by the route's onFinish + response-validator. The header
+// carries the dose-card / reassessment-card / refusal that the assistant
+// turn renders as embedded UI cards (per AssistantContent.dose_card etc).
+//
+// Region: NOT owned here — RegionToggle is self-contained (reads + writes
+// the `care-partner-region` cookie itself; reloads on change). Lane C's
+// lib/region.ts is the cookie contract.
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
-import { Rail } from "./rail";
-import { CaseCanvas } from "./case-canvas";
-import { EvidencePanel } from "./evidence-panel";
-import type { Turn1Response, Turn1Success } from "./fixtures";
-import type { Turn2Response } from "@/app/api/turn2/route";
-import type { CaseState } from "@/lib/case-state";
-import { getGuideline } from "@/registry/guidelines";
-import { gateOpen, useTurn15Flow } from "./use-turn15-flow";
-import type { Phase } from "./phase-loader";
+import { ChatPanel, type ChatMessage } from "./chat-panel";
+import { NotePane, type ExtractedFacts } from "./note-pane";
+import { SessionRail, type DemoSession } from "./session-rail";
+import { RegionToggle } from "./region-toggle";
+import type { AnyRefusalKind } from "@/tools/types";
+import type { DoseCardProps } from "./dose-card";
+import type {
+  ReassessmentCardProps,
+  ReassessmentBranch,
+} from "./reassessment-card";
 
-type Busy =
-  | { kind: "turn1" }
-  | { kind: "turn15"; phase: Phase }
-  | { kind: "turn2"; phase: Phase }
-  | null;
+// ─── Validated-response shape (mirrors lib/response-validator output) ───────
+//
+// The /api/chat route serialises this as JSON, URI-encodes it (because
+// calculation_trace contains "→" U+2192 which is > Latin-1), and sets it
+// as the X-Validated-Response header on the streaming response. We
+// decode + parse it here and lift the cards onto the AssistantContent.
+//
+// We keep the type permissive (Record<string, unknown> for the merged
+// card payloads) so a Lane B schema bump doesn't cascade here — the
+// card components do the strict shape-check at render time.
+
+interface ValidatedResponse {
+  text: string;
+  dose_card: Record<string, unknown> | null;
+  reassessment_card: Record<string, unknown> | null;
+  refusal: {
+    toolName: string;
+    kind: string;
+    message: string;
+  } | null;
+  blocked?: {
+    reason: string;
+    detail: string;
+    card_kind?: string;
+  };
+}
+
+// ─── ID generator for client-side message ids ────────────────────────────────
+// nanoid would be heavier; this is fine for keys (uniqueness within a
+// session, not collision-safe across processes).
+
+let _idCounter = 0;
+function nextMessageId(): string {
+  _idCounter += 1;
+  return `m${Date.now().toString(36)}-${_idCounter}`;
+}
 
 export function Console() {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [note, setNote] = useState("");
-  const [draft, setDraft] = useState("");
-  const [turn1, setTurn1] = useState<Turn1Response | null>(null);
-  const [weightConfirmed, setWeightConfirmed] = useState(false);
-  const [turn2, setTurn2] = useState<Turn2Response | null>(null);
-  const [busy, setBusy] = useState<Busy>(null);
-  // activeDemoId — eng-review lock #9. Set on demo-button click; clear on
-  // paste-run. Drives the rail item's aria-current="true" highlight.
-  const [activeDemoId, setActiveDemoId] = useState<string | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
-  const turn1Ok: Turn1Success | null = turn1?.status === "ok" ? turn1 : null;
+  // ─── Derive originalNote chip from the first user message (D13) ──────────
+  //
+  // The composer's context chip shows "Jack T, 3yo, 14.2 kg · croup" or
+  // similar — a one-line summary the clinician sees as the conversation
+  // pin. v1 derives it from the first user message + the note. Phase 3
+  // server-side extraction (out of scope) would compute it from the
+  // assistant's first turn's ExtractedFacts.
 
-  function mergeCaseState(updated: CaseState) {
-    setTurn1((prev) =>
-      prev?.status === "ok" ? { ...prev, caseState: updated } : prev,
-    );
-  }
-
-  const {
-    turn15,
-    pendingAsk,
-    recommendedGuidelineId,
-    turn15Busy,
-    resetTurn15,
-    runDecide: runTurn15Decide,
-    runAnswer: runTurn15Answer,
-  } = useTurn15Flow(turn1Ok, mergeCaseState);
-
-  const activeStateRef = useRef<HTMLDivElement | null>(null);
-  const turn15Code = turn15?.status ?? null;
-  const turn2Code = turn2?.status ?? null;
-  useEffect(() => {
-    if (turn15Code === null && turn2Code === null) return;
-    const el = activeStateRef.current;
-    if (el && typeof el.scrollIntoView === "function") {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [turn15Code, turn2Code]);
-
-  const turn15InFlight = turn15Busy !== null;
-  const guidelineGateOpen = gateOpen({
-    turn1Ok,
-    weightConfirmed,
-    turn15Busy,
-  });
-
-  // anyBusy — true while ANY turn is in flight. Wired into the rail's
-  // disabled-during-work guard (the existing console used busy !== null ||
-  // turn15Busy !== null inline).
-  const anyBusy = busy !== null || turn15InFlight;
-
-  async function runTurn1(rawNote: string) {
-    const trimmed = rawNote.trim();
-    if (trimmed.length === 0) return;
-    setNote(trimmed);
-    setTurn1(null);
-    resetTurn15();
-    setTurn2(null);
-    setWeightConfirmed(false);
-    setBusy({ kind: "turn1" });
-    try {
-      const res = await fetch("/api/turn1", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ note: trimmed }),
-      });
-      const data = (await res.json()) as Turn1Response;
-      setTurn1(data);
-    } catch (e) {
-      setTurn1({
-        status: "error",
-        message:
-          "Could not reach the turn-1 endpoint. " +
-          (e instanceof Error ? e.message : String(e)),
-      });
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  function onRunPaste(rawNote: string) {
-    // Paste-run is the "I'm not running a known demo" path — clear the
-    // active highlight so no rail row stays selected against a different note.
-    setActiveDemoId(null);
-    void runTurn1(rawNote);
-  }
-
-  function onRunDemo(id: string, demoNote: string) {
-    setActiveDemoId(id);
-    void runTurn1(demoNote);
-  }
-
-  function onConfirmWeight() {
-    setWeightConfirmed(true);
-    void runTurn15Decide(turn1Ok?.confidence ?? "medium");
-  }
-
-  function runTurn2(guidelineId: string, condition: string) {
-    if (!turn1Ok) return;
-    const caseState: CaseState = {
-      ...turn1Ok.caseState,
-      selected_condition: condition,
-      selected_guideline_id: guidelineId,
-      selected_severity: turn1Ok.extractedFacts.severity,
+  const originalNote = useMemo(() => {
+    const firstUser = messages.find((m) => m.role === "user");
+    if (!firstUser) return undefined;
+    // Cheap heuristic: trim to ~60 chars, use the first line.
+    const firstLine = firstUser.text.split("\n")[0]?.trim() ?? "";
+    return {
+      primary: firstLine.length > 60 ? firstLine.slice(0, 57) + "…" : firstLine,
     };
-    runTurn2WithCaseState(guidelineId, caseState);
-  }
+  }, [messages]);
 
-  async function runTurn2WithCaseState(
-    guidelineId: string,
-    incoming: CaseState,
-  ) {
-    const caseState: CaseState = {
-      ...incoming,
-      selected_guideline_id: incoming.selected_guideline_id ?? guidelineId,
-      selected_severity:
-        incoming.selected_severity ?? turn1Ok?.extractedFacts.severity ?? null,
-      selected_condition:
-        incoming.selected_condition ??
-        getGuideline(guidelineId)?.condition ??
-        null,
-    };
+  // ─── Submit a turn to /api/chat ──────────────────────────────────────────
+  //
+  // The single transport. Builds the next messages[] state (user turn
+  // appended), POSTs to /api/chat, awaits the response + the
+  // X-Validated-Response header, appends the assistant turn. Errors
+  // surface as an assistant prose message so the thread doesn't
+  // silently swallow failures.
 
-    setTurn2(null);
-    setBusy({ kind: "turn2", phase: "retrieving-guideline" });
-    try {
-      const res = await fetch("/api/turn2", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ caseState }),
-      });
-      setBusy({ kind: "turn2", phase: "checking-completeness" });
-      const data = (await res.json()) as Turn2Response;
-      setTurn2(data);
-    } catch (e) {
-      setTurn2({
-        status: "error",
-        message:
-          "Could not reach the turn-2 endpoint. " +
-          (e instanceof Error ? e.message : String(e)),
-      });
-    } finally {
-      setBusy(null);
-    }
-  }
+  const submit = useCallback(
+    async (userText: string, currentMessages: ChatMessage[]) => {
+      const userMsg: ChatMessage = {
+        id: nextMessageId(),
+        role: "user",
+        text: userText,
+      };
+      const nextMessages = [...currentMessages, userMsg];
+      setMessages(nextMessages);
+      setIsStreaming(true);
 
-  const turn2Phase: Phase | null = busy?.kind === "turn2" ? busy.phase : null;
+      try {
+        const { prose, validated } = await postChat(
+          // The route reads ModelMessage shape; map our ChatMessage union
+          // to {role, content} pairs. Assistant turns we've already
+          // rendered get their text aggregated from any prose field.
+          nextMessages.map((m) =>
+            m.role === "user"
+              ? { role: "user" as const, content: m.text }
+              : { role: "assistant" as const, content: m.content.prose ?? "" },
+          ),
+        );
+
+        const assistantMsg: ChatMessage = {
+          id: nextMessageId(),
+          role: "assistant",
+          content: {
+            prose,
+            dose_card: validated?.dose_card
+              ? (validated.dose_card as unknown as DoseCardProps)
+              : undefined,
+            reassessment_card: validated?.reassessment_card
+              ? toReassessmentCardProps(validated.reassessment_card)
+              : undefined,
+            refusal: validated?.refusal
+              ? {
+                  kind: validated.refusal.kind as AnyRefusalKind,
+                  message: validated.refusal.message,
+                }
+              : undefined,
+          },
+        };
+        setMessages([...nextMessages, assistantMsg]);
+      } catch (err) {
+        // Surface failure inline as an assistant prose error — never
+        // crash the UI or leave the user with a half-finished thread.
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Could not reach /api/chat.";
+        setMessages([
+          ...nextMessages,
+          {
+            id: nextMessageId(),
+            role: "assistant",
+            content: {
+              prose: `⚠ Technical error: ${message}`,
+            },
+          },
+        ]);
+      } finally {
+        setIsStreaming(false);
+      }
+    },
+    [],
+  );
+
+  // ─── Handlers ────────────────────────────────────────────────────────────
+
+  const onChatSubmit = useCallback(
+    async (text: string) => {
+      await submit(text, messages);
+    },
+    [submit, messages],
+  );
+
+  const onNewChat = useCallback(() => {
+    setMessages([]);
+    setNote("");
+    setActiveSessionId(null);
+  }, []);
+
+  const onLoadCase = useCallback((session: DemoSession) => {
+    // Demo-row click: load the note into the centre pane, reset the chat
+    // thread, mark the rail row active. The clinician then clicks
+    // submit on the chat composer (or types follow-up) to actually fire
+    // a request — we deliberately don't auto-submit so the demo can be
+    // edited first.
+    setNote(session.note);
+    setMessages([]);
+    setActiveSessionId(session.id);
+  }, []);
+
+  const onNewSession = useCallback(() => {
+    onNewChat();
+  }, [onNewChat]);
+
+  // For the v1 surface the note-pane is a typing surface — the
+  // ExtractedFacts payload is derived server-side in a future iteration.
+  // We leave it empty so the accordion shows the placeholder state.
+  const facts: ExtractedFacts | undefined = undefined;
+
+  // ─── Render — 3-column Heidi-grammar shell ───────────────────────────────
+  //
+  // Breakpoints per D4 (design-review 2026-05-28): 220/700/520 ≥1500px,
+  // 200/1fr/480 1180–1500px, 180/1fr/420 1024–1180px. Mobile <1024px
+  // deferred (TODO; see TODOS.md). The narrow-viewport banner from the
+  // old shell is preserved for ≤1024px users.
 
   return (
     <>
-      {/* The 3-column shell (eng-review lock #2, fixed widths 272 + 1fr + 392).
-          Tailwind v4 arbitrary value class so the widths are visible in the DOM
-          for the mandatory regression test. */}
       <div
-        data-testid="bluey-shell"
-        className="bluey-shell grid h-screen w-full grid-cols-[272px_1fr_392px]"
+        data-testid="heidi-grammar-shell"
+        className="heidi-shell grid h-screen w-full grid-cols-[220px_1fr_520px]"
       >
-        <Rail
-          draft={draft}
-          onDraftChange={setDraft}
-          onRun={onRunPaste}
-          onRunDemo={onRunDemo}
-          busy={anyBusy}
-          activeDemoId={activeDemoId}
+        <SessionRail
+          activeSessionId={activeSessionId ?? undefined}
+          onLoadCase={onLoadCase}
+          onNewSession={onNewSession}
         />
-        <CaseCanvas
+
+        <NotePane
           note={note}
-          turn1={turn1}
-          turn1Ok={turn1Ok}
-          facts={turn1Ok?.extractedFacts ?? null}
-          weightConfirmed={weightConfirmed}
-          onConfirmWeight={onConfirmWeight}
-          turn1Busy={busy?.kind === "turn1"}
-          turn2Busy={busy?.kind === "turn2"}
-          turn15={turn15}
-          turn15Busy={turn15InFlight}
-          pendingAsk={pendingAsk}
-          recommendedGuidelineId={recommendedGuidelineId}
-          guidelineGateOpen={guidelineGateOpen}
-          onAnswerTurn15={(a) => void runTurn15Answer(a)}
-          onSelectGuideline={runTurn2}
-          activeStateRef={activeStateRef}
+          onNoteChange={setNote}
+          facts={facts}
+          region="NZ"
         />
-        <EvidencePanel turn2={turn2} turn2Busy={turn2Phase} />
+
+        <div className="relative flex h-full flex-col">
+          {/* RegionToggle floats top-right of the chat column — self-contained,
+              cookie-driven, reloads on change. */}
+          <div className="absolute right-3 top-2 z-10">
+            <RegionToggle />
+          </div>
+          <ChatPanel
+            messages={messages}
+            onSubmit={onChatSubmit}
+            onNewChat={onNewChat}
+            isStreaming={isStreaming}
+            originalNote={originalNote}
+          />
+        </div>
       </div>
 
-      {/* Narrow-viewport banner (eng-review lock #7). CSS-only — no JS
-          matchMedia listener, so no hydration-mismatch risk. The shell above
-          is hidden in CSS at <1100px; this banner is hidden ≥1100px. */}
+      {/* Narrow-viewport banner — preserved from the prior shell. CSS-only
+          so no hydration risk. Shell above is hidden in CSS at <1024px;
+          this banner is hidden ≥1024px. */}
       <div
         data-testid="narrow-viewport-banner"
         className="narrow-viewport-banner hidden h-screen items-center justify-center bg-background px-6 text-center"
@@ -235,11 +268,125 @@ export function Console() {
             This demo is built for desktop.
           </h1>
           <p className="mt-2 text-[13px] text-muted-foreground">
-            Open on a larger screen (≥ 1100px wide) to interact with the Bluey
-            clinical care partner.
+            Open on a larger screen (≥ 1024px wide) to interact with the care
+            partner.
           </p>
         </div>
       </div>
     </>
   );
+}
+
+// ─── Transport helper ───────────────────────────────────────────────────────
+//
+// Single fetch to /api/chat. Awaits the full response body (the route
+// buffers internally per its documented trade-off — see app/api/chat/route.ts
+// lines 363-380), then decodes the X-Validated-Response header to lift the
+// validator's structured output back into the parent state. Cookies (the
+// region cookie) are sent automatically by the browser; no manual handling.
+//
+// Response shape from the SDK's toUIMessageStreamResponse():
+//   - Content-Type: text/event-stream
+//   - Body: SSE "data: ..." frames. We aggregate the text content into a
+//     single prose string for the assistant message.
+//
+// If the route returns 4xx/5xx the body is JSON {error}; we surface
+// that as the error message.
+
+async function postChat(
+  messages: { role: "user" | "assistant"; content: string }[],
+): Promise<{ prose: string; validated: ValidatedResponse | null }> {
+  const res = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ messages }),
+  });
+
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const body = (await res.json()) as { error?: string };
+      if (body.error) detail = body.error;
+    } catch {
+      // Body wasn't JSON; keep the HTTP-status detail.
+    }
+    throw new Error(detail);
+  }
+
+  // Decode the X-Validated-Response header first (set BEFORE the body
+  // is sent by the route per its single-request flow).
+  let validated: ValidatedResponse | null = null;
+  const validatedHeader = res.headers.get("X-Validated-Response");
+  if (validatedHeader) {
+    try {
+      validated = JSON.parse(
+        decodeURIComponent(validatedHeader),
+      ) as ValidatedResponse;
+    } catch {
+      // Malformed header — leave validated = null; assistant message
+      // will render prose only.
+    }
+  }
+
+  // Aggregate the SSE body's text content. SDK's UI-message stream
+  // protocol emits text-delta frames; we accept the simplest case (full
+  // text in one frame) and the chunked case (multiple deltas).
+  const proseFromValidator = validated?.text;
+  let prose: string;
+  if (proseFromValidator !== undefined && proseFromValidator.length > 0) {
+    // Validator already aggregated all step text; use it as the source
+    // of truth (matches what the validator saw + parsed for cards).
+    prose = proseFromValidator;
+  } else {
+    // Fallback: read the body as text. For SSE responses this returns
+    // the raw SSE frames; we pull out the data fields.
+    const raw = await res.text();
+    prose = extractTextFromSSE(raw);
+  }
+
+  return { prose, validated };
+}
+
+// ─── SSE-to-text helper ────────────────────────────────────────────────────
+//
+// The AI SDK's UI-message stream uses JSON-per-frame: each `data:` line is
+// a small JSON object like {type:"text-delta", text:"…"} or
+// {type:"text-end"}. We aggregate the text content. This is a fallback
+// path; the primary path reads validated.text which is already aggregated
+// by lib/response-validator.
+
+function extractTextFromSSE(raw: string): string {
+  const lines = raw.split("\n");
+  let out = "";
+  for (const line of lines) {
+    if (!line.startsWith("data:")) continue;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+    try {
+      const frame = JSON.parse(payload) as {
+        type?: string;
+        text?: string;
+        delta?: string;
+      };
+      if (typeof frame.text === "string") out += frame.text;
+      else if (typeof frame.delta === "string") out += frame.delta;
+    } catch {
+      // Non-JSON data line; skip.
+    }
+  }
+  return out;
+}
+
+// ─── Reassessment card prop shaping ─────────────────────────────────────────
+//
+// The validator merges the get_reassessment_plan tool's typed result into
+// the emitted reassessment-card. The tool returns next_branches as a
+// closed-shape array but the card UI uses ReassessmentBranch{...}; we do
+// a permissive cast here because the card component does the final
+// shape-check at render.
+
+function toReassessmentCardProps(
+  raw: Record<string, unknown>,
+): ReassessmentCardProps {
+  return raw as unknown as ReassessmentCardProps;
 }
