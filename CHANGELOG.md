@@ -3,6 +3,19 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use `MAJOR.MINOR.PATCH.MICRO`.
 
+## [1.1.1.0] - 2026-05-27
+
+A targeted fix to the Step-2 apply experience. Clicking "Apply Croup" (or any guideline button) after confirming the weight and engaging Turn 1.5 now reliably runs the dose. The defense-in-depth collapse gate at the top of Turn 2 was firing inside the deterministic apply step and surfacing the "Multiple dangerous conditions remain on the differential…" amber banner AFTER the clinician had already chosen — second-guessing the human handoff. The gate now defers to the click.
+
+### Fixed
+- **Step-2 click is honored: collapse abstain skipped when `selected_guideline_id` is set.** The defense-in-depth collapse gate at the top of [app/api/turn2/route.ts](app/api/turn2/route.ts) was re-running `decideCollapse` on every POST. When the differential still carried unresolved must-not-misses (the common shape under the Turn 1 must-not-miss discipline shipped in 1.1.0.0), the gate returned `abstain` and surfaced the amber "Multiple dangerous conditions remain…" banner inside the `2 Apply / deterministic / constrained` step. The clinician had already (a) confirmed the weight, (b) engaged with Turn 1.5, and (c) clicked a specific guideline button — three layers of human deliberation. Step 2 is execution, not judgment; the gate now bypasses the abstain branch when `caseState.selected_guideline_id` is set. The defense-in-depth claim against a raw hand-crafted POST is preserved (no clicked id → still hits the gate). The wrong-guideline audit at [route.ts:295](app/api/turn2/route.ts:295) continues to catch a malicious POST that pairs a real selected id with a different confirmed condition.
+
+### Changed
+- **Test rewrites that follow the gate-bypass.** Three existing tests in [app/api/turn2/route.test.ts](app/api/turn2/route.test.ts) (`defense-in-depth: hand-crafted POST...`, `F-016D: empty differential...`, `shared stridor on croup + epiglottitis...`) now exercise the gate through the genuine hand-crafted-bypass shape (`selected_guideline_id: null`) instead of the now-bypassed Step-2-click path. The safety properties each test asserts are preserved; the threat shapes are now honest. The F-018a test (unaskable must-not-miss) is unchanged in assertion but reframed in comment — it now also serves as a smoke-test of the new bypass.
+
+### Added
+- **Regression test for the bypass.** New `"Step-2 click is the judgment handoff: selected_guideline_id present → collapse gate is SKIPPED even with unresolved must-not-miss"` test asserts that a CaseState with `selected_guideline_id` set and a positive must-not-miss in the differential reaches the dose tool (status `ok`, dose 2.13 mg, both model calls run). Non-vacuous: without the bypass it would observe `status: "abstention"` and zero model calls.
+
 ## [1.1.0.0] - 2026-05-27
 
 The advisory-rewrite + F-016 fix-loop release. Turn 1.5 becomes a one-shot diagnostic-completeness assist (ask / ok / recorded), dose abstention concentrates at Turn 2, and the canonical Croup demo button now dispenses 2.13 mg of dexamethasone live — the same button silently abstained for the entire previous release. A second safety pass (adversarial review) closed two remaining bypass paths before merge.
