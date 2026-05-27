@@ -4,6 +4,22 @@
 
 SIGN-OFF: `npx vitest run registry tools` → 5 files, 99 tests, all green. `npx tsc --noEmit` → clean.
 
+BRANCH NAMING DEVIATION (for the operator):
+The lane brief says "git push origin lane-B-registry-tools" but this worktree
+was spawned with branch name `claude/serene-robinson-fa9dbf` (the harness's
+naming, not the fan-out.sh naming). The `lane-B-registry-tools` branch exists
+at the Phase 1 SHA (b3e142d) and is attached to a DIFFERENT worktree
+(.claude/worktrees/elegant-robinson-17acc6/.claude/worktrees/lane-B-registry-tools)
+so I cannot force-move it from here without breaking git's worktree invariants.
+
+Pushed to: origin/claude/serene-robinson-fa9dbf (SHA a269592)
+Cherry-pick command for fan-in: `git cherry-pick BASE_SHA..claude/serene-robinson-fa9dbf`
+  (instead of the brief's `git cherry-pick BASE_SHA..lane-B-registry-tools`)
+
+If the operator prefers the brief's naming, they can either:
+  (a) From the trunk worktree, run: `git fetch origin && git branch -f lane-B-registry-tools origin/claude/serene-robinson-fa9dbf` (only safe AFTER removing the empty lane-B worktree at .claude/worktrees/elegant-robinson-17acc6/.claude/worktrees/lane-B-registry-tools first)
+  (b) Just cherry-pick from claude/serene-robinson-fa9dbf as-is (no rename needed; same SHA).
+
 CASCADE LEDGER (not in lane scope; documented for Phase 3 fan-in operator):
 Removing anaphylaxis from the registry breaks 6 tests in code paths the v3.1 plan deletes during Phase 3 (per plan §3 deletions list):
   - lib/completeness.test.ts (anaphylaxis arm) — lib/completeness.ts is deleted in P3.11
