@@ -10,8 +10,9 @@
 //   1. Case header: claret avatar circle (32x32, patient initials in
 //      serif) + serif patient name + muted "Paediatric · presenting <date>"
 //      sub-line.
-//   2. Meta strip: 📅 date · ⏱ session-elapsed · "Region: NZ" muted, with
-//      a bottom hairline.
+//   2. Meta strip: Lucide <Calendar /> date · <Clock /> session-elapsed ·
+//      "Region: NZ" muted, with a bottom hairline. Icons are lucide-react —
+//      NEVER emoji (D14 anti-slop, T7).
 //   3. Action bar: "+ Create plan" (claret primary) + "Resume" (ghost).
 //      Both are no-ops in v1 — they exist as visual affordances. Wiring
 //      them to anything functional is deferred (TODO).
@@ -26,6 +27,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Calendar, Clock, FilePlus } from "lucide-react";
 import {
   Accordion,
   AccordionContent,
@@ -104,15 +106,26 @@ export function NotePane({
       aria-label="Patient note"
       className="flex h-full flex-col gap-2 overflow-auto bg-[var(--cream)] px-6 py-4"
     >
-      {/* Case header */}
+      {/* Case header — T6: empty state uses Lucide FilePlus in cream-2 circle
+          (a clearer "start a case" affordance than a generic dash); when a
+          case is loaded, the avatar becomes patient initials in claret. */}
       <div className="flex items-center gap-2.5">
-        <div
-          aria-hidden="true"
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--claret)] text-[13px] font-bold text-[var(--claret-ink)]"
-          style={{ fontFamily: "var(--serif)" }}
-        >
-          {initials}
-        </div>
+        {patientName ? (
+          <div
+            aria-hidden="true"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--claret)] text-[13px] font-bold text-[var(--claret-ink)]"
+            style={{ fontFamily: "var(--serif)" }}
+          >
+            {initials}
+          </div>
+        ) : (
+          <div
+            aria-hidden="true"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--cream-2)] text-[var(--ink)]"
+          >
+            <FilePlus className="h-4 w-4" />
+          </div>
+        )}
         <div className="min-w-0">
           <div
             className="text-[15.5px] font-semibold leading-tight"
@@ -126,17 +139,21 @@ export function NotePane({
         </div>
       </div>
 
-      {/* Meta strip */}
-      <div className="flex gap-3.5 border-b border-[var(--cream-2)] py-1.5 text-[12px] text-muted-foreground">
+      {/* Meta strip — T7: Lucide <Calendar /> + <Clock /> icons, NOT emoji
+          (D14 anti-slop: emoji-as-icons is the #1 AI-slop tell). T5: the
+          region label is plain muted text — the canonical region toggle
+          lives in the right-rail footer (see RegionToggle), so this is
+          read-only context, not an affordance. */}
+      <div className="flex items-center gap-3.5 border-b border-[var(--cream-2)] py-1.5 text-[12px] text-muted-foreground">
         {dateLabel && (
-          <span>
-            <span aria-hidden="true">📅 </span>
+          <span className="inline-flex items-center gap-1">
+            <Calendar aria-hidden="true" className="h-3.5 w-3.5" />
             {dateLabel}
           </span>
         )}
         {elapsedLabel && (
-          <span>
-            <span aria-hidden="true">⏱ </span>
+          <span className="inline-flex items-center gap-1">
+            <Clock aria-hidden="true" className="h-3.5 w-3.5" />
             {elapsedLabel}
           </span>
         )}

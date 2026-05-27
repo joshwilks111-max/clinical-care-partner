@@ -35,7 +35,6 @@ import { useCallback, useMemo, useState } from "react";
 import { ChatPanel, type ChatMessage } from "./chat-panel";
 import { NotePane, type ExtractedFacts } from "./note-pane";
 import { SessionRail, type DemoSession } from "./session-rail";
-import { RegionToggle } from "./region-toggle";
 import type { AnyRefusalKind } from "@/tools/types";
 import type { DoseCardProps } from "./dose-card";
 import type {
@@ -156,19 +155,35 @@ export function Console() {
         };
         setMessages([...nextMessages, assistantMsg]);
       } catch (err) {
-        // Surface failure inline as an assistant prose error — never
-        // crash the UI or leave the user with a half-finished thread.
+        // T1 (design-review 2026-05-28 D4): surface failure as an inline
+        // assistant turn carrying an error payload. ChatPanel's AssistantBubble
+        // renders this as <Alert variant="destructive"> + Retry chip per D14
+        // semaphore (red = technical failure; a 404 IS technical). The
+        // onRetry closure captures THIS user text + the message-stack as it
+        // stood BEFORE the failed turn — clicking Retry strips the error
+        // assistant turn and re-runs submit with the same payload, so the
+        // user turn isn't duplicated in the thread.
         const message =
-          err instanceof Error
-            ? err.message
-            : "Could not reach /api/chat.";
+          err instanceof Error ? err.message : "Could not reach /api/chat.";
+        const retry = () => {
+          // Strip the error assistant turn from messages; re-submit with the
+          // original payload. We compute the "messages before this attempt"
+          // from currentMessages (the snapshot passed into submit), NOT from
+          // the closed-over `messages` (which may have grown since).
+          setMessages(nextMessages);
+          void submit(userText, currentMessages);
+        };
         setMessages([
           ...nextMessages,
           {
             id: nextMessageId(),
             role: "assistant",
             content: {
-              prose: `⚠ Technical error: ${message}`,
+              error: {
+                title: "Couldn't reach Care Partner",
+                body: `${message} Check that ANTHROPIC_API_KEY is configured and /api/chat is wired.`,
+                onRetry: retry,
+              },
             },
           },
         ]);
@@ -240,20 +255,18 @@ export function Console() {
           region="NZ"
         />
 
-        <div className="relative flex h-full flex-col">
-          {/* RegionToggle floats top-right of the chat column — self-contained,
-              cookie-driven, reloads on change. */}
-          <div className="absolute right-3 top-2 z-10">
-            <RegionToggle />
-          </div>
-          <ChatPanel
-            messages={messages}
-            onSubmit={onChatSubmit}
-            onNewChat={onNewChat}
-            isStreaming={isStreaming}
-            originalNote={originalNote}
-          />
-        </div>
+        {/* T4 (design-review 2026-05-28 LS-2): the absolute-positioned
+            RegionToggle previously rendered here was an orphan duplicate —
+            ChatPanel already renders RegionToggle inside its own footer
+            (the canonical location per the screenshot spec). Removing the
+            orphan leaves a single footer-pinned region toggle. */}
+        <ChatPanel
+          messages={messages}
+          onSubmit={onChatSubmit}
+          onNewChat={onNewChat}
+          isStreaming={isStreaming}
+          originalNote={originalNote}
+        />
       </div>
 
       {/* Narrow-viewport banner — preserved from the prior shell. CSS-only

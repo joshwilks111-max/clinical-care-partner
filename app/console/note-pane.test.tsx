@@ -60,8 +60,13 @@ describe("NotePane", () => {
     );
     expect(screen.getByText("MR")).toBeInTheDocument();
 
-    // Missing name → "—" placeholder, no crash.
+    // Missing name → empty-state avatar uses Lucide <FilePlus /> in a
+    // cream-2 circle (T6, design-review 2026-05-28 LS-4 — clearer
+    // "start a case" affordance than the prior "—" dash placeholder).
+    // The icon is rendered as an SVG with lucide's standard class hook
+    // so we assert by class presence rather than text content.
     rerender(<NotePane note="" onNoteChange={() => {}} />);
-    expect(screen.getByText("—")).toBeInTheDocument();
+    const filePlusIcon = document.querySelector("svg.lucide-file-plus");
+    expect(filePlusIcon).toBeInTheDocument();
   });
 });

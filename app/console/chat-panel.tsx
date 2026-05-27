@@ -29,7 +29,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { BookOpen, FileText, Mic, Plus, Send } from "lucide-react";
+import {
+  AlertTriangle,
+  BookOpen,
+  FileText,
+  Mic,
+  Plus,
+  Send,
+} from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ButtonGroup } from "@/components/ui/button-group";
@@ -108,6 +116,25 @@ export interface AssistantContent {
   ask_user?: {
     kind: AskUserKind;
     question: string;
+  };
+  /**
+   * Inline technical-failure surface (T1, design-review 2026-05-28 D4).
+   * When the parent's POST /api/chat fails (network 404, 5xx, or any
+   * non-200 response), the parent renders an assistant turn carrying
+   * this field — the bubble shows a red <Alert variant="destructive">
+   * with the title + body copy + a "Retry" chip in the footer. Per
+   * D14 semaphore: red = technical failure (a 404 IS technical);
+   * amber = clinical safety abstention; never confuse the two.
+   *
+   * Clicking Retry fires `onRetry()` — the parent re-submits the LAST
+   * user message and replaces this assistant turn with the new attempt.
+   * The failed user turn STAYS in the thread (user sees what they sent);
+   * only the error assistant turn is replaced.
+   */
+  error?: {
+    title: string;
+    body: string;
+    onRetry?: () => void;
   };
 }
 
@@ -262,10 +289,12 @@ export function ChatPanel({
         >
           Care Partner
         </Badge>
+        {/* T3 (design-review 2026-05-28 LS-1): flex-shrink-0 + whitespace-nowrap
+            so the link never truncates to "+ N" at narrower right-rail widths. */}
         <button
           type="button"
           onClick={handleNewChat}
-          className="cursor-pointer text-[12.5px] font-semibold text-[var(--claret)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--claret)] focus-visible:ring-offset-2"
+          className="flex-shrink-0 cursor-pointer whitespace-nowrap text-[12.5px] font-semibold text-[var(--claret)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--claret)] focus-visible:ring-offset-2"
         >
           + New chat
         </button>
@@ -490,6 +519,39 @@ function AssistantBubble({
                 question={content.ask_user.question}
                 onSubmit={onAskSubmit}
               />
+            )}
+
+            {/* T1 (design-review 2026-05-28 D4): technical-failure surface.
+                Red <Alert variant="destructive"> per D14 (red = technical;
+                amber = clinical safety abstention). Retry chip re-fires
+                the parent's last-message submission via the onRetry hook;
+                the failed user turn stays in the thread, only this
+                assistant error turn gets replaced by the new attempt. */}
+            {content.error && (
+              <Alert
+                variant="destructive"
+                data-testid="chat-error-alert"
+                aria-live="assertive"
+                className="mt-1"
+              >
+                <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+                <AlertTitle>{content.error.title}</AlertTitle>
+                <AlertDescription className="flex flex-col gap-2">
+                  <span>{content.error.body}</span>
+                  {content.error.onRetry && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={content.error.onRetry}
+                      className="self-start"
+                      data-testid="chat-error-retry"
+                    >
+                      Retry
+                    </Button>
+                  )}
+                </AlertDescription>
+              </Alert>
             )}
           </div>
         </MessageContent>
