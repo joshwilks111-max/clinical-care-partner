@@ -256,7 +256,7 @@ export function CaseCanvas({
           <span aria-hidden>·</span>
           <span>Audit log</span>
           <span aria-hidden>·</span>
-          <span className="font-mono">v1.2.0</span>
+          <span className="font-mono">v1.3.0</span>
         </footer>
       </div>
     </main>

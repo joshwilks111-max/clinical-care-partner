@@ -106,7 +106,7 @@ export function Rail({
           rows={6}
           aria-describedby="paste-help"
           placeholder="Paste a free-text clinical note or doctor–patient transcript. Cmd/Ctrl+Enter to run."
-          className="resize-none rounded-lg border-hairline bg-white px-3 py-2.5 text-[13px] leading-snug placeholder:text-slate-400 focus-visible:ring-primary"
+          className="resize-none rounded-lg border-hairline bg-white px-3 py-2.5 text-[13px] leading-snug placeholder:text-muted-foreground focus-visible:ring-primary"
         />
         <Button
           data-testid="paste-run"
@@ -174,7 +174,7 @@ export function Rail({
 
       {/* FOOTER — version + model. Mirrors the variant. */}
       <div className="flex items-center justify-between border-t border-hairline px-5 py-3 text-[10.5px] text-muted-foreground">
-        <span>v1.2.0</span>
+        <span>v1.3.0</span>
         <span className="font-mono">claude-opus-4-7</span>
       </div>
     </aside>
