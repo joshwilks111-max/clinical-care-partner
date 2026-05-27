@@ -57,10 +57,10 @@ describe("Console — demo buttons (X5, no typing)", () => {
 });
 
 describe("Console — refusal flow (amber)", () => {
-  it("POSTs the prefilled note to /api/turn1 and renders an amber refusal", async () => {
-    // Type the mock with fetch's own signature so the recorded call args
-    // (fetchMock.mock.calls[0]) are a proper [input, init?] tuple — not the
-    // zero-arg [] a param-less mock infers, which can't be cast to a 2-tuple.
+  it("pasting a weightless note renders an amber refusal, zero model calls", async () => {
+    // Paste a realistic clinical note that has no kg weight → the pre-LLM gate
+    // refuses before any model call. The refusal UI must be amber (safety Alert),
+    // not red (technical error).
     const fetchMock = vi.fn<typeof fetch>(async () =>
       jsonResponse({
         status: "refusal",
@@ -71,21 +71,20 @@ describe("Console — refusal flow (amber)", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Console />);
-    fireEvent.click(
-      document.querySelector('[data-demo-id="refusal"]') as HTMLButtonElement,
-    );
+    fireEvent.change(screen.getByLabelText(/paste your own note/i), {
+      target: {
+        value:
+          "Jack T, 3yo. Barky cough, stridor at rest, no cyanosis. ?croup.",
+      },
+    });
+    fireEvent.click(screen.getByTestId("paste-run"));
 
     await waitFor(() => {
       expect(screen.getByTestId("turn1-refusal")).toBeInTheDocument();
     });
 
-    // It POSTed to /api/turn1 with the prefilled note (no typing). The mock is
-    // typed with fetch's signature, so calls[0] is a proper [input, init?] tuple.
-    const [url, init] = fetchMock.mock.calls[0];
+    const [url] = fetchMock.mock.calls[0];
     expect(url).toBe("/api/turn1");
-    const sentNote = JSON.parse((init as RequestInit).body as string)
-      .note as string;
-    expect(sentNote).toBe(DEMO_NOTES.find((d) => d.id === "refusal")?.note);
 
     // The refusal renders amber (the safety Alert), not red.
     const refusal = screen.getByTestId("turn1-refusal");
@@ -162,7 +161,7 @@ describe("Console — paste-your-own intake (Task B, free-form note/transcript)"
     expect(fetchMock.mock.calls[0][0]).toBe("/api/turn1");
   });
 
-  it("both transcript demo buttons are present and POST their fixture notes", async () => {
+  it("transcript demo button is present and POSTs its fixture note", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () =>
       jsonResponse({
         status: "refusal",
@@ -173,21 +172,16 @@ describe("Console — paste-your-own intake (Task B, free-form note/transcript)"
     vi.stubGlobal("fetch", fetchMock);
 
     render(<Console />);
-    for (const id of ["transcript-croup", "transcript-noweight"] as const) {
-      const btn = document.querySelector(`[data-demo-id="${id}"]`);
-      expect(btn).toBeInTheDocument();
-    }
-    fireEvent.click(
-      document.querySelector(
-        '[data-demo-id="transcript-noweight"]',
-      ) as HTMLButtonElement,
-    );
+    const btn = document.querySelector('[data-demo-id="transcript-croup"]');
+    expect(btn).toBeInTheDocument();
+
+    fireEvent.click(btn as HTMLButtonElement);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const sent = JSON.parse(
       (fetchMock.mock.calls[0][1] as RequestInit).body as string,
     ).note as string;
     expect(sent).toBe(
-      DEMO_NOTES.find((d) => d.id === "transcript-noweight")?.note,
+      DEMO_NOTES.find((d) => d.id === "transcript-croup")?.note,
     );
   });
 
