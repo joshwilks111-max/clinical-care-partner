@@ -348,6 +348,20 @@ export type ConditionMeta = {
   condition: string;
   mustNotMiss: boolean;
   discriminators: string[];
+  /**
+   * Optional: per-canonical-discriminator note synonyms used by the
+   * NegEx-style note-discriminator scanner (lib/note-discriminator-scan.ts).
+   * Maps a canonical discriminator string (must appear in `discriminators`)
+   * to the surface forms the scanner looks for in the raw note. The canonical
+   * key is what flows into Turn 1's negative_evidence and what the Turn 1.5
+   * override matches by string identity — every entry's key MUST also be in
+   * the `discriminators` array.
+   *
+   * When ABSENT (current croup, anaphylaxis), the scanner emits no
+   * groundings for that condition — same behaviour as before this field
+   * existed.
+   */
+  discriminator_surface_forms?: Record<string, string[]>;
   applicable_guidelines: string[];
 };
 
@@ -369,6 +383,34 @@ export const CONDITION_META: Record<string, ConditionMeta> = {
     condition: "epiglottitis",
     mustNotMiss: true,
     discriminators: ["drooling", "tripod posture", "muffled voice"],
+    // Per-discriminator note synonyms for the NegEx-style scanner.
+    // Sources: textbook teaching (Starship NZ paediatric notes idioms;
+    // "hot potato voice" is the classic clinical mnemonic; "sniffing
+    // position" is the anaesthetics-formal alias for tripod posture).
+    // Each canonical key MUST appear in `discriminators` above.
+    discriminator_surface_forms: {
+      drooling: [
+        "drooling",
+        "drool",
+        "sialorrhea",
+        "hypersalivation",
+        "pooling saliva",
+      ],
+      "tripod posture": [
+        "tripod posture",
+        "tripod position",
+        "tripod",
+        "tripoding",
+        "sniffing position",
+        "leaning forward",
+      ],
+      "muffled voice": [
+        "muffled voice",
+        "muffled speech",
+        "hot potato voice",
+        "thick voice",
+      ],
+    },
     applicable_guidelines: [],
   },
 };
@@ -396,4 +438,35 @@ export function buildAskableConditionSet(): ReadonlySet<string> {
       .filter(([, meta]) => meta.discriminators.length > 0)
       .map(([key]) => key),
   );
+}
+
+/**
+ * Per-condition canonical-discriminator → note synonyms map for the
+ * note-discriminator scanner (lib/note-discriminator-scan.ts).
+ *
+ * Shape: `{ <conditionKey>: { <canonicalDiscriminator>: [<synonym>, ...] } }`.
+ * Only conditions whose CONDITION_META row supplies
+ * `discriminator_surface_forms` are included; the rest are silently absent
+ * (the scanner treats absence as "no surface forms to look for → no
+ * groundings"). Keys at both levels are already normalized — the outer key
+ * is the CONDITION_META key (normalized by construction), the inner key is
+ * the canonical discriminator string the registry uses for downstream
+ * matching.
+ *
+ * Generalisation: adding a new must-not-miss condition with surface forms
+ * needs zero edits here — extend CONDITION_META and this helper picks it up.
+ */
+export type DiscriminatorSurfaceFormMap = Record<
+  string,
+  Record<string, string[]>
+>;
+
+export function buildDiscriminatorSurfaceFormMap(): DiscriminatorSurfaceFormMap {
+  const map: DiscriminatorSurfaceFormMap = {};
+  for (const [key, meta] of Object.entries(CONDITION_META)) {
+    if (meta.discriminator_surface_forms) {
+      map[key] = meta.discriminator_surface_forms;
+    }
+  }
+  return map;
 }

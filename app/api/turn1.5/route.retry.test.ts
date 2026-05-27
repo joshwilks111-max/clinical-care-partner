@@ -44,7 +44,9 @@ const ambiguousDifferential: Differential = {
       name: "Epiglottitis",
       likelihood: "must-not-miss",
       positive_evidence: [],
-      negative_evidence: ["drooling", "tripod posture", "muffled voice"],
+      // 2-of-3 discriminators absent → override does NOT fire → ask path
+      // exercised. (All-3 case is pinned in route.override.test.ts.)
+      negative_evidence: ["drooling", "tripod posture"],
     },
   ],
   candidate_guidelines: [
@@ -137,7 +139,9 @@ describe("POST /api/turn1.5 — bounded transient-only retry (decide)", () => {
   });
 
   it("auth error → error immediately, no retry", async () => {
-    actionQueue.push({ throw: new Error("401 Unauthorized: invalid x-api-key") });
+    actionQueue.push({
+      throw: new Error("401 Unauthorized: invalid x-api-key"),
+    });
     actionQueue.push({ output: askOutput });
 
     const res = await POST(postDecide());

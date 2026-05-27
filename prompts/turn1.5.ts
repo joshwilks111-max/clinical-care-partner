@@ -205,6 +205,83 @@ export function validateTurn15Output(
   return null;
 }
 
+/**
+ * Deterministic override result for the Turn 1.5 advisory decision.
+ *
+ *   none                  — no override applies; honour the LLM's needs_question.
+ *   force_no_question     — the LLM asked a clarifying question, but every
+ *                           registry discriminator for the target condition is
+ *                           ALREADY documented absent in the target's
+ *                           negative_evidence (string identity against the
+ *                           registry's canonical strings). The Turn 1
+ *                           grounding pre-pass and the route-side
+ *                           canonicalisation make these strings canonical, so
+ *                           a string-identity match is the right signal here.
+ *
+ *                           The route translates this into an OkResponse (no
+ *                           question, recommend the LLM's
+ *                           recommended_condition + recommended_guideline)
+ *                           and surfaces the grounded discriminators to the
+ *                           UI for the green "NO CLARIFYING QUESTION NEEDED"
+ *                           badge.
+ */
+export type Turn15Override =
+  | { kind: "none" }
+  | {
+      kind: "force_no_question";
+      target: string;
+      groundedDiscriminators: string[];
+    };
+
+/**
+ * ConText/NegEx-style assertion pre-pass override (Chapman 2001 JAMIA;
+ * Harkema 2009 JBI 42:839 — see plan file).
+ *
+ * Called by the Turn 1.5 route AFTER validateTurn15Output succeeds. If the
+ * LLM voted to ask a clarifying question on a target condition whose registry
+ * discriminators are ALREADY in the differential's negative_evidence (the
+ * Turn 1 grounding pre-pass + canonicalisation puts them there), we override
+ * the decision: emit OkResponse instead of AskResponse. This is the
+ * deterministic guard that fires the green badge.
+ *
+ * SAFE TO CALL when needs_question is already false — returns {kind:"none"}.
+ * SAFE TO CALL when target_condition is absent from the differential — returns
+ * {kind:"none"}.
+ * SAFE TO CALL when only SOME of the discriminators are grounded — returns
+ * {kind:"none"} (we never partially-override; if 2 of 3 are absent, the
+ * question still fires to confirm the third).
+ */
+export function shouldOverrideToNoQuestion(
+  output: Turn15ModelOutput,
+  differential: Differential,
+): Turn15Override {
+  if (!output.needs_question || !output.target_condition) {
+    return { kind: "none" };
+  }
+  const targetKey = normConditionKey(output.target_condition);
+  const targetCondition = differential.conditions.find(
+    (c) => normConditionKey(c.name) === targetKey,
+  );
+  if (!targetCondition) return { kind: "none" };
+
+  const meta = getConditionMeta(targetKey);
+  if (!meta || meta.discriminators.length === 0) return { kind: "none" };
+
+  // Every canonical registry discriminator must appear (by string identity)
+  // in the target's negative_evidence. If even one is missing, the question
+  // still fires.
+  const negative = new Set(targetCondition.negative_evidence);
+  for (const d of meta.discriminators) {
+    if (!negative.has(d)) return { kind: "none" };
+  }
+
+  return {
+    kind: "force_no_question",
+    target: targetCondition.name,
+    groundedDiscriminators: [...meta.discriminators],
+  };
+}
+
 export type ConfirmedFactsSummary = {
   age: string | null;
   weight_kg: number | null;

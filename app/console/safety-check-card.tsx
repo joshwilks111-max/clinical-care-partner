@@ -61,7 +61,9 @@ export function HighImpactQuestionCard({
         {question}
       </p>
 
-      <p className="mt-1 text-[12px] text-muted-foreground">{rationaleSummary}</p>
+      <p className="mt-1 text-[12px] text-muted-foreground">
+        {rationaleSummary}
+      </p>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {ANSWER_OPTIONS.map((opt) => (
@@ -91,11 +93,26 @@ export function HighImpactQuestionCard({
 
 export type NoQuestionNeededBannerProps = {
   rationaleSummary?: string;
+  /**
+   * Populated when the OkResponse came via the deterministic
+   * ConText/NegEx-style override (shouldOverrideToNoQuestion).
+   * When present, the badge surfaces WHICH condition's discriminators
+   * grounded the override and lists them — turning the badge from a
+   * status notice into auditable evidence.
+   */
+  overriddenTarget?: string;
+  overriddenDiscriminators?: string[];
 };
 
 export function NoQuestionNeededBanner({
   rationaleSummary,
+  overriddenTarget,
+  overriddenDiscriminators,
 }: NoQuestionNeededBannerProps) {
+  const hasOverride =
+    overriddenTarget !== undefined &&
+    overriddenDiscriminators !== undefined &&
+    overriddenDiscriminators.length > 0;
   return (
     <Alert
       data-testid="turn15-no-question"
@@ -107,7 +124,17 @@ export function NoQuestionNeededBanner({
           NO CLARIFYING QUESTION NEEDED
         </span>
       </AlertTitle>
-      {rationaleSummary && (
+      {hasOverride && (
+        <AlertDescription
+          data-testid="turn15-no-question-grounded"
+          className="text-emerald-800 dark:text-emerald-200"
+        >
+          {overriddenTarget} discriminators (
+          {overriddenDiscriminators!.join(", ")}) all documented absent in the
+          note.
+        </AlertDescription>
+      )}
+      {!hasOverride && rationaleSummary && (
         <AlertDescription className="text-emerald-800 dark:text-emerald-200">
           {rationaleSummary}
         </AlertDescription>
@@ -129,10 +156,7 @@ export function AnswerRecordedBanner({
     ? `Answer recorded for ${target}. Select a guideline when ready.`
     : `Skipped clarifying question about ${target}. Select a guideline when ready.`;
   return (
-    <Alert
-      data-testid="turn15-recorded"
-      className="border-muted bg-muted/30"
-    >
+    <Alert data-testid="turn15-recorded" className="border-muted bg-muted/30">
       <AlertDescription className="text-[13px]">{message}</AlertDescription>
     </Alert>
   );

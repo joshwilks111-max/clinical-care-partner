@@ -28,8 +28,23 @@ import { generateText, Output, stepCountIs } from "ai";
 import { refusalGate } from "@/lib/refusal-gate";
 import { buildCaseState } from "@/lib/case-state";
 import { Turn1Output } from "@/lib/schemas";
-import { buildTurn1SystemPrompt, buildTurn1UserPrompt } from "@/prompts/turn1";
+import {
+  buildTurn1SystemPrompt,
+  buildTurn1UserPrompt,
+  sanitizeUntrustedNote,
+  type AbsentGrounding,
+} from "@/prompts/turn1";
 import { withTransientRetry } from "@/lib/retry";
+import {
+  scanNote,
+  groundedAbsentFor,
+  type Grounding,
+} from "@/lib/note-discriminator-scan";
+import {
+  buildDiscriminatorSurfaceFormMap,
+  getConditionMeta,
+} from "@/registry/guidelines";
+import { normConditionKey } from "@/lib/condition-key";
 
 // Node runtime (NOT edge): the SDK + node:crypto (CaseState hash) need it.
 // maxDuration 300s gives the opus-4-7 call headroom. (DESIGN.md Stack section.)
@@ -72,6 +87,83 @@ const KG_WEIGHT_PRESENT = /\d+(?:\.\d+)?\s*(?:kg|kgs|kilograms?)\b/i;
  */
 export function hasKgWeight(note: string): boolean {
   return KG_WEIGHT_PRESENT.test(note);
+}
+
+// ---------------------------------------------------------------------------
+// Canonicalisation helper (post-model rewrite of negative_evidence to the
+// registry's canonical discriminator strings).
+//
+// Pure function: input differential + groundings → new differential. Never
+// mutates the input. Never invents evidence — only rewrites when the scanner
+// positively grounded the SAME discriminator on the SAME condition.
+// ---------------------------------------------------------------------------
+
+function canonicaliseDifferentialAgainstGroundings(
+  output: Turn1Output,
+  groundings: Grounding[],
+): Turn1Output {
+  if (groundings.length === 0) return output;
+
+  const newConditions = output.differential.conditions.map((c) => {
+    const meta = getConditionMeta(c.name);
+    // Only canonicalise conditions the registry knows about with non-empty
+    // discriminators (the scanner can only have grounded these).
+    if (!meta || meta.discriminators.length === 0) return c;
+
+    const conditionKey = normConditionKey(c.name);
+    const groundedAbsent = new Set(groundedAbsentFor(groundings, conditionKey));
+    if (groundedAbsent.size === 0) return c;
+
+    // Drop any existing negative_evidence entry whose word-set covers a
+    // grounded-absent canonical discriminator. Word-set (not substring)
+    // because the LLM frequently reorders ("voice not muffled" should match
+    // canonical "muffled voice"). Conservative: we never drop a finding
+    // whose word-set does NOT fully cover the canonical — that protects
+    // findings the LLM legitimately recorded that happen to share a word.
+    const wordsOf = (s: string) =>
+      new Set(
+        s
+          .toLowerCase()
+          .replace(/[^\w\s]/g, " ")
+          .split(/\s+/)
+          .filter(Boolean),
+      );
+    const filtered = c.negative_evidence.filter((entry) => {
+      const entryWords = wordsOf(entry);
+      for (const canonical of groundedAbsent) {
+        const canonicalWords = wordsOf(canonical);
+        // canonical is "matched" iff every word in canonical appears in entry.
+        let allPresent = true;
+        for (const w of canonicalWords) {
+          if (!entryWords.has(w)) {
+            allPresent = false;
+            break;
+          }
+        }
+        if (allPresent) return false;
+      }
+      return true;
+    });
+
+    // Add canonical registry strings for every grounded-absent discriminator.
+    const canonicalised: string[] = [
+      ...filtered,
+      ...Array.from(groundedAbsent),
+    ];
+
+    return {
+      ...c,
+      negative_evidence: Array.from(new Set(canonicalised)),
+    };
+  });
+
+  return {
+    ...output,
+    differential: {
+      ...output.differential,
+      conditions: newConditions,
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +233,45 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   // ===================================================================
+  // STEP 1.5 — DETERMINISTIC DISCRIMINATOR SCAN (note → grounded findings).
+  //
+  // ConText/NegEx-style assertion pre-pass (Chapman 2001; Harkema 2009). For
+  // every registry must-not-miss condition with discriminator_surface_forms,
+  // scan the note for findings the clinician already documented absent. The
+  // result feeds two downstream steps:
+  //   (a) The Turn 1 prompt receives a REGISTRY-GROUNDED FINDINGS block
+  //       (registry strings only — no note spans, per eng-review Finding 1C).
+  //       This nudges the LLM to use the canonical strings verbatim in
+  //       negative_evidence.
+  //   (b) A canonicalisation pass after the model returns rewrites the
+  //       LLM's negative_evidence strings to the registry-canonical form
+  //       wherever the scanner positively grounded the same finding
+  //       (Finding 1B; defensive against LLM paraphrase).
+  //
+  // try/catch wrapping is LOAD-BEARING (Finding 1D critical-gap): a regex bug
+  // or unexpected input should NEVER 500 the route. On scanner failure, fall
+  // through to LLM-only behaviour with empty groundings.
+  let groundings: Grounding[] = [];
+  let absentGroundings: AbsentGrounding[] = [];
+  try {
+    const surfaceFormMap = buildDiscriminatorSurfaceFormMap();
+    groundings = scanNote(sanitizeUntrustedNote(note), surfaceFormMap);
+    absentGroundings = groundings
+      .filter((g) => g.state === "absent")
+      .map((g) => ({
+        condition: g.condition,
+        discriminator: g.discriminator,
+      }));
+  } catch (e) {
+    // Belt-and-braces: log and continue with empty groundings. The whole
+    // point of this pre-pass is to be a refinement on top of LLM-only
+    // behaviour; if the scanner fails we degrade to the pre-fix behaviour.
+    console.error("[turn1] discriminator scan failed:", e);
+    groundings = [];
+    absentGroundings = [];
+  }
+
+  // ===================================================================
   // STEP 2 — MODEL CALL (only reached when a kg weight is present).
   // Extract facts + build the differential as STRUCTURED output. The untrusted
   // note is wrapped as DATA via prompts/turn1.ts (the enforced trust boundary).
@@ -171,7 +302,7 @@ export async function POST(req: Request): Promise<Response> {
         maxOutputTokens: MAX_OUTPUT_TOKENS,
         stopWhen: stepCountIs(1), // single-shot structured extraction; no tools.
         system: buildTurn1SystemPrompt(),
-        prompt: buildTurn1UserPrompt(note),
+        prompt: buildTurn1UserPrompt(note, absentGroundings),
         experimental_output: Output.object({ schema: Turn1Output }),
       });
 
@@ -189,6 +320,34 @@ export async function POST(req: Request): Promise<Response> {
         "A technical error occurred during turn 1 differential generation.",
     };
     return NextResponse.json(err, { status: 502 });
+  }
+
+  // ===================================================================
+  // STEP 2.5 — CANONICALISATION (eng-review Finding 1B).
+  //
+  // For each must-not-miss condition the LLM produced, intersect its
+  // negative_evidence with the scanner's grounded-absent registry strings
+  // for that condition. Replace the LLM's potentially-paraphrased strings
+  // ("drooling absent", "no drooling") with the canonical registry strings
+  // ("drooling") that downstream layers (Turn 1.5 override, decideCollapse
+  // Rule 4) match by string identity.
+  //
+  // GUARD (Finding 1B critical-gap): only rewrite when the scanner POSITIVELY
+  // grounded the finding for THIS condition. We never invent evidence the
+  // scanner didn't independently confirm. If a discriminator already appears
+  // verbatim in negative_evidence, no rewrite happens — the array is just
+  // deduped.
+  //
+  // try/catch wrap matches the scanner pre-pass; canonicalisation is an
+  // optimisation, not a safety boundary — never let it 500 the route.
+  try {
+    parsed = canonicaliseDifferentialAgainstGroundings(parsed, groundings);
+  } catch (e) {
+    console.error("[turn1] canonicalisation failed:", e);
+    // Fall through with the un-canonicalised differential; the Turn 1.5
+    // override path will simply not fire as reliably, but no safety
+    // boundary is breached (Turn 2's gate still abstains on positive
+    // must-not-miss).
   }
 
   // Post-model defensive gate: even with a kg weight present in the raw text,

@@ -24,6 +24,7 @@ import {
   buildTurn15RepairPrompt,
   buildTurn15SystemPrompt,
   buildTurn15UserPrompt,
+  shouldOverrideToNoQuestion,
   validateTurn15Output,
   type ConfirmedFactsSummary,
   type Turn15ModelOutput,
@@ -90,6 +91,17 @@ export type OkResponse = {
   recommended_guideline: string;
   rationale_summary: string;
   caseState: CaseState;
+  /**
+   * Populated when the response came via the deterministic
+   * ConText/NegEx-style override (shouldOverrideToNoQuestion) — the LLM said
+   * needs_question=true but every registry discriminator for `overridden_target`
+   * was already documented absent in the differential. The UI uses these
+   * fields to render the green "NO CLARIFYING QUESTION NEEDED — drooling,
+   * tripod posture, muffled voice all documented absent" badge. Absent on
+   * the normal needs_question=false path.
+   */
+  overridden_target?: string;
+  overridden_discriminators?: string[];
 };
 
 export type RecordedResponse = {
@@ -298,7 +310,9 @@ export async function POST(req: Request): Promise<Response> {
         message: result.message,
         code: result.code,
       };
-      return NextResponse.json(err, { status: result.code === "empty_differential" ? 400 : 502 });
+      return NextResponse.json(err, {
+        status: result.code === "empty_differential" ? 400 : 502,
+      });
     }
 
     const output = result.output;
@@ -307,6 +321,33 @@ export async function POST(req: Request): Promise<Response> {
     );
 
     if (output.needs_question && output.target_condition && output.question) {
+      // OVERRIDE CHECK — ConText/NegEx-style assertion pre-pass.
+      //
+      // The LLM voted to ask, but if every registry discriminator for the
+      // target condition is ALREADY documented absent in the differential
+      // (the Turn 1 grounding pre-pass + canonicalisation puts them there),
+      // we skip the question and emit OkResponse instead. The green badge
+      // in the UI reads `overridden_target` + `overridden_discriminators`.
+      const override = shouldOverrideToNoQuestion(
+        output,
+        caseState.differential,
+      );
+      if (override.kind === "force_no_question") {
+        const ok: OkResponse = {
+          status: "ok",
+          recommended_condition: output.recommended_condition,
+          recommended_guideline: output.recommended_guideline,
+          rationale_summary: output.rationale_summary,
+          caseState,
+          overridden_target: override.target,
+          overridden_discriminators: override.groundedDiscriminators,
+        };
+        console.log(
+          `[turn1.5:decide] override=force_no_question target=${override.target} (all ${override.groundedDiscriminators.length} discriminators grounded absent)`,
+        );
+        return NextResponse.json(ok);
+      }
+
       const target = output.target_condition;
       const ask: AskResponse = {
         status: "ask",

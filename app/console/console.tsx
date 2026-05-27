@@ -233,9 +233,7 @@ export function Console() {
           <Button
             data-testid="paste-run"
             disabled={
-              busy !== null ||
-              turn15Busy !== null ||
-              draft.trim().length === 0
+              busy !== null || turn15Busy !== null || draft.trim().length === 0
             }
             onClick={() => runTurn1(draft)}
             className="h-auto min-h-[44px] py-2"
@@ -292,9 +290,7 @@ export function Console() {
           {turn1Ok && <Turn1View turn1={turn1Ok} />}
 
           <div ref={activeStateRef} className="space-y-4">
-            {turn15InFlight && (
-              <PhaseLoader phase="checking-safety" />
-            )}
+            {turn15InFlight && <PhaseLoader phase="checking-safety" />}
 
             {turn15?.status === "ask" && pendingAsk && (
               <HighImpactQuestionCard
@@ -310,13 +306,16 @@ export function Console() {
             {turn15?.status === "ok" && (
               <NoQuestionNeededBanner
                 rationaleSummary={turn15.rationale_summary}
+                overriddenTarget={turn15.overridden_target}
+                overriddenDiscriminators={turn15.overridden_discriminators}
               />
             )}
 
             {turn15?.status === "recorded" && (
               <AnswerRecordedBanner
                 target={
-                  turn15.caseState.discriminating_qa.at(-1)?.target ?? "question"
+                  turn15.caseState.discriminating_qa.at(-1)?.target ??
+                  "question"
                 }
                 engaged={
                   turn15.caseState.discriminating_qa.at(-1)?.engaged ?? false
