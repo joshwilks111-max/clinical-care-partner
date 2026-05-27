@@ -48,7 +48,10 @@ import { ask_user } from "@/tools/ask_user";
 import { validateResponse } from "@/lib/response-validator";
 import { getSystemPrompt } from "@/lib/skill-loader";
 import { getRegion } from "@/lib/region";
-import { newToolCallId } from "@/lib/tool-call-id";
+// lib/tool-call-id is still used by route.test.ts mocks (synthesising
+// SDK toolCallIds) but the route itself doesn't need to mint ids — the
+// SDK gives us one in the execute options, see the fix at the execute
+// closures below.
 
 // Node runtime (NOT edge): the AI SDK + node:crypto need it.
 // maxDuration 300s gives the opus-4-7 multi-step loop headroom.
@@ -239,13 +242,19 @@ export async function POST(request: Request): Promise<Response> {
                 "Jurisdiction (NZ or AU). Defaults to the session region if omitted.",
               ),
           }),
-          execute: async ({ condition, region: toolRegion }) => {
+          execute: async (
+            { condition, region: toolRegion },
+            { toolCallId },
+          ) => {
             const effectiveRegion = toolRegion ?? region;
-            const callId = newToolCallId();
             const result = load_guideline(condition, effectiveRegion);
-            // Merge callId into the result so the skill can embed it in
-            // fenced blocks; the validator joins on it.
-            return { ...result, tool_call_id: callId };
+            // Echo the SDK's own toolCallId back into the result so the
+            // skill embeds it in any fenced JSON block; the validator joins
+            // on tr.toolCallId from event.steps[].toolResults — the SAME id.
+            // (Earlier revisions minted a parallel id via newToolCallId();
+            // the skill couldn't see it, so every dose-card was blocked
+            // with orphan_tool_call_id — caught by the first live smoke.)
+            return { ...result, tool_call_id: toolCallId };
           },
         },
 
@@ -269,14 +278,16 @@ export async function POST(request: Request): Promise<Response> {
                 "Patient weight in kilograms (must be numeric, not a string).",
               ),
           }),
-          execute: async ({ guideline_id, dose_rule_id, weight_kg }) => {
-            const callId = newToolCallId();
+          execute: async (
+            { guideline_id, dose_rule_id, weight_kg },
+            { toolCallId },
+          ) => {
             const result = calculate_dose(
               guideline_id,
               dose_rule_id,
               weight_kg,
             );
-            return { ...result, tool_call_id: callId };
+            return { ...result, tool_call_id: toolCallId };
           },
         },
 
@@ -298,14 +309,16 @@ export async function POST(request: Request): Promise<Response> {
                 "The severity label that drove dose selection (must match a severity_row label from load_guideline).",
               ),
           }),
-          execute: async ({ guideline_id, dose_rule_id, initial_severity }) => {
-            const callId = newToolCallId();
+          execute: async (
+            { guideline_id, dose_rule_id, initial_severity },
+            { toolCallId },
+          ) => {
             const result = get_reassessment_plan(
               guideline_id,
               initial_severity,
               dose_rule_id,
             );
-            return { ...result, tool_call_id: callId };
+            return { ...result, tool_call_id: toolCallId };
           },
         },
 

@@ -19,25 +19,40 @@ ROOT="$(git rev-parse --show-toplevel)"
 CASES_FILE="$ROOT/skills/dose-calculator/evals/cases.jsonl"
 GREEN=$'\e[32m'; RED=$'\e[31m'; RST=$'\e[0m'
 
-# ─── Helper: POST a chat request, return response body ───────────────────────
+# ─── Helper: POST a chat request, return the X-Validated-Response payload ───
 # Sends a single-message conversation to /api/chat with the specified region
-# cookie. Captures the raw response body. Surfaces network/HTTP failures.
+# cookie. The route's response body is an SSE stream (toUIMessageStreamResponse)
+# while the validator's structured output (dose_card / reassessment_card /
+# refusal / blocked) lives in the X-Validated-Response header as URI-encoded
+# JSON. We dump headers to a tmp file, extract the header, URI-decode, and
+# echo the resulting JSON — callers then `jq` the JSON to assert.
 chat() {
-  local region="$1" note="$2" response http_status
-  response=$(curl -sS -w '\n__STATUS:%{http_code}' \
+  local region="$1" note="$2"
+  local hdr_file="/tmp/smoke-hdr-$$.txt" body_file="/tmp/smoke-body-$$.txt"
+  local http_status validated
+  curl -sS -o "$body_file" -D "$hdr_file" -w '%{http_code}' \
     "$PREVIEW_URL/api/chat" \
     -H 'content-type: application/json' \
     --cookie "care-partner-region=$region" \
-    -d "$(jq -n --arg n "$note" '{messages:[{role:"user",content:$n}]}')") \
-    || { echo "${RED}NET FAIL${RST}: curl errored hitting $PREVIEW_URL/api/chat" >&2; return 2; }
-  http_status="${response##*__STATUS:}"
-  response="${response%$'\n'__STATUS:*}"
+    -d "$(jq -n --arg n "$note" '{messages:[{role:"user",content:$n}]}')" \
+    > /tmp/smoke-status-$$.txt 2>/tmp/smoke-curl-err-$$.txt \
+    || { echo "${RED}NET FAIL${RST}: curl errored hitting $PREVIEW_URL/api/chat" >&2; cat /tmp/smoke-curl-err-$$.txt >&2; rm -f "$hdr_file" "$body_file"; return 2; }
+  http_status=$(cat /tmp/smoke-status-$$.txt); rm -f /tmp/smoke-status-$$.txt /tmp/smoke-curl-err-$$.txt
   if [ "$http_status" != "200" ]; then
     echo "${RED}HTTP $http_status${RST} from /api/chat" >&2
-    echo "$response" >&2
+    head -c 1200 "$body_file" >&2; echo >&2
+    rm -f "$hdr_file" "$body_file"
     return 3
   fi
-  printf '%s' "$response"
+  # Pull the X-Validated-Response header (case-insensitive match), strip the
+  # name + colon, URI-decode via Python (portable across Git-Bash on Windows).
+  validated=$(grep -i '^x-validated-response:' "$hdr_file" | head -1 | sed 's/^[^:]*: //' | tr -d '\r\n')
+  rm -f "$hdr_file" "$body_file"
+  if [ -z "$validated" ]; then
+    echo "${RED}MISSING HEADER${RST}: X-Validated-Response not on response" >&2
+    return 4
+  fi
+  printf '%s' "$validated" | python -c "import sys, urllib.parse; sys.stdout.write(urllib.parse.unquote(sys.stdin.read()))"
 }
 
 # ─── Case 1: Jack T. NZ — happy path ─────────────────────────────────────────
