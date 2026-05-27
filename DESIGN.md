@@ -1,4 +1,3 @@
-<!-- /autoplan restore point: /c/Users/joshw/.gstack/projects/gifted-ishizaka-9363b7/claude-gifted-ishizaka-9363b7-autoplan-restore-20260525-112516.md -->
 # DESIGN — Heidi Take-Home: Clinical Decision-Support Care Partner
 
 Status: **SCOPE LOCKED 2026-05-25** (pared from the reviewed walkthrough draft after a 4-paper
@@ -153,7 +152,7 @@ dose plausibility check (GUARD-7).
 
 ---
 
-## The safety spine (this is what wins the review)
+## The safety spine
 
 - **The LLM is structurally blocked from generating a dose** — tool only (npj Digital Medicine:
   task-specific calc tools = 5.5–13× fewer incorrect responses vs in-context arithmetic).
