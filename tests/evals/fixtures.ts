@@ -220,7 +220,15 @@ export const CASE_COLLAPSE_CROUP: CaseState = buildCaseState({
         name: "Epiglottitis",
         likelihood: "must-not-miss",
         positive_evidence: [],
-        negative_evidence: ["drooling", "tripod posture", "muffled voice"],
+        // 2-of-3 registry discriminators by design: the Turn 1.5 override
+        // (shouldOverrideToNoQuestion) fires only when ALL registry
+        // discriminators for the target are in negative_evidence by string
+        // identity. Leaving "muffled voice" off keeps the canonical ask flow
+        // alive for case7/case9/case10 — they're testing the ask→answer→
+        // turn2 pipeline, not the override path (which has its own unit
+        // tests in app/api/turn1.5/route.override.test.ts and an iron-rule
+        // regression in lib/note-discriminator-scan.regression.test.ts).
+        negative_evidence: ["drooling", "tripod posture"],
       },
     ],
     candidate_guidelines: [

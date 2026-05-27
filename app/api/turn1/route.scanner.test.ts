@@ -19,7 +19,7 @@
 // SDK mocked at the `ai` boundary, same pattern as route.retry.test.ts. NO
 // live API calls.
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 type Action = { output: unknown } | { throw: Error };
 const actionQueue: Action[] = [];
@@ -50,10 +50,16 @@ vi.mock("@ai-sdk/anthropic", () => ({
 }));
 
 import { POST } from "./route";
+// Imported AFTER POST so vi.spyOn below replaces the binding the route sees.
+import * as registry from "@/registry/guidelines";
 
 beforeEach(() => {
   actionQueue.length = 0;
   generateTextCalls.length = 0;
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 function postNote(note: string): Request {
@@ -201,23 +207,46 @@ describe("Turn 1 route — scanner wiring (Finding 1B, 1C, 1D)", () => {
     expect(trustedBlock).not.toMatch(/\bdrool\b(?!ing)/);
   });
 
-  it("scanner-throw fallback: route does not 500 when scanner throws", async () => {
+  it("scanner-throw fallback: route does not 500 when scanner throws (Finding 1D)", async () => {
+    // FORCE the scanner pipeline to throw by spying on the registry helper the
+    // route calls FIRST inside the try block. The route's try/catch must
+    // convert the exception into empty groundings + continue with LLM-only
+    // behaviour — NEVER 500. (Finding 1D critical-gap: a regex bug or
+    // unexpected input must not bring the route down.)
+    const spy = vi
+      .spyOn(registry, "buildDiscriminatorSurfaceFormMap")
+      .mockImplementation(() => {
+        throw new Error("simulated scanner-side registry failure");
+      });
+    // Silence the console.error the route logs on scanner failure (we WANT it
+    // to log, but the test output stays clean).
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
     actionQueue.push({ output: paraphrasedTurn1Output() });
 
-    // Force the scanner to throw by monkey-patching the surface-form map.
-    // We can't easily stub the scanner from here without dependency
-    // injection, so instead we use a note that exercises every codepath —
-    // if the route handles a normal note without 500 we're safe. The
-    // try/catch around scanNote already converts any thrown exception to an
-    // empty groundings array (logged to console.error). For a stronger
-    // test we'd inject a stub; this test pins that the happy path returns
-    // 200 + ok status (the throw path is exercised by manual code review +
-    // the route still being a 200/refusal/error tri-state).
-    const note = "3yo, 14.2 kg, barky cough.";
+    // Note documents drooling absent — if the scanner worked, the prompt
+    // WOULD contain a REGISTRY-GROUNDED FINDINGS block. With the scanner
+    // forced to throw, the route must fall through to LLM-only and the
+    // prompt must NOT contain that block.
+    const note = "3yo, 14.2 kg, barky cough. No drooling.";
     const res = await POST(postNote(note));
+
     expect(res.status).toBe(200);
     const body = (await res.json()) as { status: string };
     expect(body.status).toBe("ok");
+
+    // Prompt does NOT contain the REGISTRY-GROUNDED block — the scanner
+    // failed, absentGroundings is empty, buildTurn1UserPrompt skips the
+    // block. The LLM still got called (so the route didn't abort).
+    expect(generateTextCalls.length).toBe(1);
+    expect(generateTextCalls[0].prompt).not.toContain(
+      "REGISTRY-GROUNDED FINDINGS",
+    );
+
+    // The spy fired (the route did call the registry helper).
+    expect(spy).toHaveBeenCalled();
+    // The error was logged (audit trail intact).
+    expect(errSpy).toHaveBeenCalled();
   });
 
   it("non-grounded conditions are not canonicalised (croup has no surface forms)", async () => {
