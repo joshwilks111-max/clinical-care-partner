@@ -10,7 +10,7 @@
 //
 //   <SessionRail>  (LEFT, 220px)  — 5 demo cases, click → load note + reset chat
 //   <NotePane>     (CENTRE, 1fr)  — note textarea + extracted-facts accordion
-//   <ChatPanel>    (RIGHT, 520px) — thread + composer + suggested prompts
+//   <ChatPanel>    (RIGHT, ≥1/3 vw) — thread + composer + suggested prompts
 //
 // State owned here:
 //   - note: string                       — the centre-pane note content
@@ -228,16 +228,18 @@ export function Console() {
 
   // ─── Render — 3-column Heidi-grammar shell ───────────────────────────────
   //
-  // Breakpoints per D4 (design-review 2026-05-28): 220/700/520 ≥1500px,
-  // 200/1fr/480 1180–1500px, 180/1fr/420 1024–1180px. Mobile <1024px
-  // deferred (TODO; see TODOS.md). The narrow-viewport banner from the
-  // old shell is preserved for ≤1024px users.
+  // Columns: 220px fixed rail · minmax(0,1fr) centre note · minmax(33vw,42vw)
+  // chat. The chat column is floored at one third of the viewport (grows to
+  // 42vw on wide screens) so the Care Partner is always ≥1/3 of the screen;
+  // minmax(0,1fr) on the centre stops the note textarea from overflowing its
+  // track. Mobile <1100px is deferred — the narrow-viewport banner below
+  // takes over (globals.css ≤1099px).
 
   return (
     <>
       <div
         data-testid="heidi-grammar-shell"
-        className="heidi-shell grid h-screen w-full grid-cols-[220px_1fr_520px]"
+        className="heidi-shell grid h-screen w-full grid-cols-[220px_minmax(0,1fr)_minmax(33vw,42vw)]"
       >
         <SessionRail
           activeSessionId={activeSessionId ?? undefined}

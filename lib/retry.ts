@@ -11,9 +11,8 @@
 // SAME red response the route produces today.
 //
 // THE SAFETY CONTRACT (this is the load-bearing part):
-//   * We retry ONLY transient errors. The match list mirrors the eval's
-//     `isTransient` (tests/evals/provider.ts) so production and the eval agree
-//     on what "transient" means.
+//   * We retry ONLY transient errors (the match list below defines what
+//     "transient" means — a model/SDK hiccup, never a logic or auth failure).
 //   * A Zod/validation parse failure (ZodError), a logic error, an auth error
 //     (bad/missing key → 401), or ANY non-transient error is re-thrown
 //     IMMEDIATELY with ZERO retries. The retry must NEVER mask a real failure —
@@ -24,9 +23,8 @@
 //     zero model calls — retry never touches the gate.
 
 /**
- * The transient-signal match list. Identical in spirit to the eval's TRANSIENT
- * regex (tests/evals/provider.ts) — kept in sync so "transient" means the same
- * thing in production and in the eval harness.
+ * The transient-signal match list — the single definition of what counts as a
+ * retryable model/SDK hiccup (as opposed to a logic/auth/parse failure).
  *
  * Matches (case-insensitive): AI_NoOutputGeneratedError / "No output
  * generated", "overloaded", "rate limit", HTTP 429 / 529, ECONNRESET, and a

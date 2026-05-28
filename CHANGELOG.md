@@ -3,6 +3,36 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use `MAJOR.MINOR.PATCH.MICRO`.
 
+## [1.6.0.0] - 2026-05-28
+
+The left rail is now the eval bench. Every case the Care Partner is exercised against is a
+clickable row, so a reviewer can load any case into the console and watch the live chatbot
+respond. The Care Partner column is wider. The dead Promptfoo harness is gone.
+
+### Added
+- `lib/eval-cases.ts` — the 16 behavioural eval cases as one typed, client-safe source. Each
+  case carries its clinician `prompt`, the `expected_tools`, the mocked tool returns, and an
+  `expected_output_shape` (whose core assertion is the safety thesis: the dose number, the cap,
+  and the citation never appear in model prose, only in the typed cards). The external eval
+  harness and the in-app rail read this same file, so they cannot drift.
+
+### Changed
+- The left rail (`app/console/session-rail.tsx`) now renders one row per eval case, grouped
+  Doses / Refusals & asks / Follow-up, with the full Jack T. NZ note as case 1. It replaces the
+  five hand-authored demo rows. The group renderer is generic (was hardcoded to Today/Yesterday),
+  so a new group needs no code change.
+- The Care Partner chat column is floored at one third of the viewport
+  (`grid-cols-[220px_minmax(0,1fr)_minmax(33vw,42vw)]`, was a fixed 520px). The centre note
+  pane uses `minmax(0,1fr)` so its textarea cannot overflow its track.
+
+### Removed
+- The Promptfoo eval suite (`promptfoo.yaml`, `tests/evals/*`, the `npm run eval` script, the
+  `promptfoo` dev dependency). The v3.1 rewrite had already deleted the `turn1/turn2` routes and
+  the `provider.ts` bridge it drove, so it could no longer run. The 16-case set above is its
+  successor, aimed at the single `/api/chat` route. The deterministic spine stays gated by
+  vitest, including `skills/dose-calculator/contract.test.ts` and its `cases.jsonl` fixture
+  (untouched).
+
 ## [1.5.0.0] - 2026-05-28
 
 A submission landing page is now the front door. The live console moved to `/demo`.
