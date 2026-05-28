@@ -63,7 +63,7 @@ export function SessionRail({
     <aside
       role="complementary"
       aria-label="Sessions"
-      className="flex h-full flex-col gap-3.5 border-r border-[var(--cream-2)] bg-[var(--cream)] p-3 text-[13px]"
+      className="flex h-full flex-col gap-3.5 overflow-hidden border-r border-[var(--cream-2)] bg-[var(--cream)] p-3 text-[13px]"
     >
       {/* Brand block — H logo + wordmark + bottom hairline */}
       <div className="flex items-center gap-2 border-b border-[var(--cream-2)] pb-2">
