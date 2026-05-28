@@ -194,18 +194,22 @@ export function ChatPanel({
 
   // Cmd/Ctrl+K = new chat. Mirrors the universal "new conversation"
   // keybind. We fire onNewChat directly (with the confirm path baked
-  // into handleNewChat).
+  // into handleNewChat). Mid-stream this is a no-op — same gate as the
+  // button (parent stops the stream too as the correctness fix, but
+  // ignoring the keypress entirely is simpler and matches the visual
+  // disabled state of the button).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
+        if (isStreaming) return;
         handleNewChat();
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages.length]);
+  }, [messages.length, isStreaming]);
 
   function handleNewChat() {
     if (messages.length > 0) {
@@ -248,11 +252,16 @@ export function ChatPanel({
           Care Partner
         </Badge>
         {/* T3 (design-review 2026-05-28 LS-1): flex-shrink-0 + whitespace-nowrap
-            so the link never truncates to "+ N" at narrower right-rail widths. */}
+            so the link never truncates to "+ N" at narrower right-rail widths.
+            Disabled while streaming so the clinician gets a "system busy" cue
+            and we close off the setMessages([])-mid-stream race (the parent's
+            onNewChat also calls stop() as the correctness fix; this is the UX
+            cue + defence in depth). Mirrors the Send button's gating. */}
         <button
           type="button"
           onClick={handleNewChat}
-          className="flex-shrink-0 cursor-pointer whitespace-nowrap text-[12.5px] font-semibold text-[var(--claret)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--claret)] focus-visible:ring-offset-2"
+          disabled={isStreaming}
+          className="flex-shrink-0 cursor-pointer whitespace-nowrap text-[12.5px] font-semibold text-[var(--claret)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--claret)] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:no-underline"
         >
           + New chat
         </button>

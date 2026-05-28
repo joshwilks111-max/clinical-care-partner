@@ -98,11 +98,24 @@ export function Console() {
     [],
   );
 
-  const { messages, sendMessage, status, error, setMessages, regenerate } =
-    useChat({
-      transport,
-      sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
-    });
+  // `stop` is required for any caller of setMessages — see the "+ New chat"
+  // race fix below. Without it, clicking New chat mid-stream clears the
+  // messages array but the transport keeps writing deltas onto the empty
+  // array, so the thread "un-clears" as the rest of the assistant turn
+  // lands. stop() aborts the in-flight request and is a no-op if nothing
+  // is streaming.
+  const {
+    messages,
+    sendMessage,
+    status,
+    error,
+    setMessages,
+    regenerate,
+    stop,
+  } = useChat({
+    transport,
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
+  });
 
   const isStreaming = status === "streaming" || status === "submitted";
 
@@ -158,13 +171,19 @@ export function Console() {
   );
 
   const onNewChat = useCallback(() => {
+    // Abort the in-flight stream BEFORE clearing the array — otherwise the
+    // transport keeps writing deltas onto the cleared messages[] and the
+    // thread visibly un-clears as the stream completes. Safe when idle
+    // (no-op). chat-panel.tsx also gates the trigger control with
+    // disabled={isStreaming} as defence in depth.
+    stop();
     setMessages([]);
     setNote("");
     setActiveSessionId(null);
     setPatientName(undefined);
     setPatientSubLine(undefined);
     setSeededFirstMessageId(undefined);
-  }, [setMessages]);
+  }, [setMessages, stop]);
 
   const onLoadCase = useCallback(
     (session: DemoSession) => {
