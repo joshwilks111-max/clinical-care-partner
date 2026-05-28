@@ -3,6 +3,30 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use `MAJOR.MINOR.PATCH.MICRO`.
 
+## [1.5.0.0] - 2026-05-28
+
+A submission landing page is now the front door. The live console moved to `/demo`.
+
+### Added
+- A narrative landing page at `/` (`app/landing/landing-page.tsx`). It walks the brief
+  requirement by requirement, tells the safety-spine story (the model passes a rule id, the
+  tool owns every number), shows the region-routing story (NZ and AU both resolve to
+  0.15 mg/kg first-line, 12 mg cap, through different guidelines), and walks the build
+  journey from a hardcoded calculator to a thin harness over a fat skill. It ships an
+  interactive dose calculator that runs the same deterministic mg/kg-plus-cap maths the
+  server tool runs, so a reader can drag the weight and watch the dose update without the
+  model ever being involved.
+- A one-page architecture diagram authored as HTML (`docs/architecture.html`) and rendered
+  to `docs/architecture.png`. It depicts the real v3.1 spine: the untrusted note, the four
+  tools, the typed `UIMessagePart` rendering, and the judgment-up / execution-down seam.
+
+### Changed
+- The clinical console moved from `/` to `/demo`. The landing page's calls to action link to
+  it. The console itself is unchanged.
+- `docs/architecture.md` is now the prose companion to the HTML diagram. It dropped the
+  stale references to v3.0 internals (a server-side response validator, a session store, an
+  `onFinish` hook) that the v3.1 rewrite had already deleted.
+
 ## [1.4.1.0] - 2026-05-28
 
 Post-ship polish. Two correctness fixes, no change to the deterministic dose spine.
