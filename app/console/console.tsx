@@ -197,18 +197,15 @@ export function Console() {
       setSeededFirstMessageId(undefined);
       setActiveSessionId(session.id);
 
-      // Parse session.name (e.g. "Jack T · croup (NZ)" or "Mia R · ?epiglottitis")
-      // into a patient name + condition sub-line. The format is "<Name> · <rest>"
-      // — split on the first " · " separator. If no separator, the whole label
-      // is the name and the sub-line stays empty.
-      const sep = session.name.indexOf(" · ");
-      if (sep === -1) {
-        setPatientName(session.name);
-        setPatientSubLine(undefined);
-      } else {
-        setPatientName(session.name.slice(0, sep));
-        setPatientSubLine(session.name.slice(sep + 3));
-      }
+      // The patient header is derived from the CASE'S CLINICAL CONTENT, never
+      // from the rail label. The rail labels are eval-explicit ("Case 7 ·
+      // weight 14200 → implausible") — splitting those on " · " would put
+      // "Case 7" in the patient-name slot and the eval taxonomy in the
+      // sub-line (design-review F1). Instead we use the patient name parsed
+      // from the prompt's "Patient:" line plus the region. Terse prompts with
+      // no "Patient:" line leave the header in its neutral state.
+      setPatientName(session.patient);
+      setPatientSubLine(session.patient ? session.region : undefined);
     },
     [setMessages],
   );

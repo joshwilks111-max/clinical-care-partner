@@ -109,21 +109,30 @@ export function SessionRail({
       {/* One group block per distinct group, in first-seen order. The list
           scrolls if it overflows the rail height (16 cases > viewport). */}
       <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto">
-        {groups.map((group) => (
-          <div key={group} className="flex flex-col gap-0.5">
-            <div className="border-t border-[var(--cream-2)] px-1.5 pb-1 pt-2 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
-              {group}
+        {groups.map((group) => {
+          const inGroup = DEMO_SESSIONS.filter((s) => s.group === group);
+          return (
+            <div key={group} className="flex flex-col gap-0.5">
+              {/* Group header carries a count so each chunk's size is legible at
+                a glance (F4) — "Refusals & asks · 9" reads as a section, not a
+                wall of same-weight rows. */}
+              <div className="flex items-baseline gap-1.5 border-t border-[var(--cream-2)] px-1.5 pb-1 pt-2 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+                <span>{group}</span>
+                <span className="font-normal tabular-nums opacity-70">
+                  {inGroup.length}
+                </span>
+              </div>
+              {inGroup.map((s) => (
+                <SessionRow
+                  key={s.id}
+                  session={s}
+                  active={s.id === activeSessionId}
+                  onClick={() => onLoadCase(s)}
+                />
+              ))}
             </div>
-            {DEMO_SESSIONS.filter((s) => s.group === group).map((s) => (
-              <SessionRow
-                key={s.id}
-                session={s}
-                active={s.id === activeSessionId}
-                onClick={() => onLoadCase(s)}
-              />
-            ))}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </aside>
   );
@@ -147,15 +156,26 @@ function SessionRow({
       type="button"
       onClick={onClick}
       aria-current={active ? "true" : undefined}
+      // F5: focus ring is 2px claret offset 2px per DESIGN.md §11 (was offset-1).
       className={cn(
-        "rounded-md px-2 py-1.5 text-left text-[12.5px] transition-colors hover:bg-[var(--cream-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--claret)] focus-visible:ring-offset-1",
+        "rounded-md px-2 py-1.5 text-left text-[12.5px] transition-colors hover:bg-[var(--cream-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--claret)] focus-visible:ring-offset-2",
         active &&
           "border-l-2 border-[var(--claret)] bg-[var(--cream-2)] pl-1.5",
       )}
     >
-      <div className="font-semibold text-foreground">{session.name}</div>
-      <div className="text-[11px] text-muted-foreground">
-        {session.timestamp}
+      {/* F4: clamp the eval label to one line so 16 rows stay scannable in a
+          220px rail; the full label is available on hover/focus via title. */}
+      <div
+        className="truncate font-semibold text-foreground"
+        title={session.name}
+      >
+        {session.name}
+      </div>
+      {/* F2: the second line is the region (NZ/AU) — a real field, not the old
+          misused `timestamp`. F6: warm --muted #7a6e62 (AA 4.7:1 on cream),
+          not the slate text-muted-foreground (~4.2:1). */}
+      <div className="text-[11px] text-[var(--muted-ink)]">
+        {session.region}
       </div>
     </button>
   );

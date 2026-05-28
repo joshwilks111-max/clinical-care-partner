@@ -658,23 +658,42 @@ Please plan dex.`,
 
 // ─── Rail-facing projection ───────────────────────────────────────────────────
 //
-// The SessionRail renders DemoSession[] (id, name, timestamp, group, note). We
-// derive it from EVAL_CASES so the rail and the eval bench share one source.
-// `note` is the case prompt; `timestamp` carries the region tag (NZ/AU) so the
-// existing "<Name> · <sub>" parse in console.tsx surfaces it in the header.
+// The SessionRail renders one row per eval case. We derive the rows from
+// EVAL_CASES so the rail and the eval bench share one source.
+//
+// Fields the rail/console consume:
+//   - name:   the eval label (the row's primary text)
+//   - region: NZ/AU (a real, named field — NOT the old misused `timestamp`)
+//   - patient: the patient name parsed from the prompt's "Patient:" line, used
+//              for the centre note-pane header so the eval label never leaks
+//              into the patient context (the header reads "Jack T.", not
+//              "Case 7"). Falls back to undefined when the terse prompts carry
+//              no "Patient:" line; the header then shows its neutral state.
 
 export interface RailCase {
   id: string;
   name: string;
-  timestamp: string;
+  /** NZ | AU — the guideline jurisdiction this case exercises. */
+  region: string;
   group: string;
   note: string;
+  /** Patient name parsed from the prompt, for the note-pane header (not the label). */
+  patient?: string;
+}
+
+/** Pull the patient name out of a prompt's "Patient: <name>" line, if present. */
+function patientFromPrompt(prompt: string): string | undefined {
+  const m = prompt.match(/^Patient:\s*(.+?)\s*$/m);
+  if (!m) return undefined;
+  // Trim a trailing period and any "(age...)" trailing bits — keep the name.
+  return m[1].replace(/[.,]\s*$/, "").trim() || undefined;
 }
 
 export const EVAL_SESSIONS: RailCase[] = EVAL_CASES.map((c) => ({
   id: c.id,
   name: c.label,
-  timestamp: c.region,
+  region: c.region,
   group: c.group,
   note: c.prompt,
+  patient: patientFromPrompt(c.prompt),
 }));
