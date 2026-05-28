@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Clinical Care-Partner — Architecture (v3.1)</title>
+<!--
+  ARCHITECTURE DIAGRAM — v3.1 (commit 3315d07+, VERSION 1.4.0.0)
+  Self-contained: inline CSS, zero dependencies, no JS. Render to PNG with any
+  headless browser (the README embeds the rendered docs/architecture.png).
+
+  Every box maps to a real file on the v3.1 codebase. This replaces the prior
+  mermaid source, which still named the deleted v3.0 internals
+  (lib/session-store.ts, lib/response-validator.ts, an onFinish validator).
+  v3.1 pins the note IN-ROUTE (app/api/chat/route.ts) and relies on the SDK's
+  typed UIMessagePart channel — there is NO separate server-side validator.
+-->
+<style>
+  :root {
+    /* self-contained palette — does not depend on app/globals.css tokens */
+    --ink:        #1f2937;
+    --ink-soft:   #475569;
+    --paper:      #ffffff;
+    --rule:       #e2e8f0;
+
+    --untrusted-bg: #fee2e2; --untrusted-br: #dc2626; --untrusted-tx: #7f1d1d;
+    --skill-bg:     #f6efe6; --skill-br:     #5b2230; --skill-tx:     #3d1620;
+    --llm-bg:       #dbeafe; --llm-br:       #2563eb; --llm-tx:       #1e3a8a;
+    --harn-bg:      #fef9c3; --harn-br:      #ca8a04; --harn-tx:      #713f12;
+    --det-bg:       #dcfce7; --det-br:       #16a34a; --det-tx:       #14532d;
+    --reg-bg:       #bbf7d0; --reg-br:       #15803d; --reg-tx:       #14532d;
+    --ui-bg:        #ede5d4; --ui-br:        #5b2230; --ui-tx:        #3d1620;
+    --seam-bg:      #111827; --seam-tx:      #f9fafb;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--paper); }
+  body {
+    font: 13px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    width: 1240px;            /* fixed canvas → predictable ~1-page PNG */
+    padding: 28px 32px 22px;
+  }
+  h1 { font-size: 22px; margin: 0 0 2px; letter-spacing: -0.01em; }
+  .sub { color: var(--ink-soft); font-size: 13px; margin: 0 0 4px; }
+  .oneliner { font-size: 13.5px; color: var(--ink); margin: 0 0 16px; }
+  .oneliner b { color: #111827; }
+  code { font-family: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 11.5px; }
+
+  .stack { display: flex; flex-direction: column; gap: 0; }
+  .layer {
+    border: 1.5px solid var(--rule);
+    border-radius: 12px;
+    padding: 11px 14px 13px;
+    position: relative;
+  }
+  .layer + .arrow { height: 26px; }
+  .layer-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 9px; }
+  .layer-tag {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .layer-note { font-size: 11.5px; color: var(--ink-soft); }
+
+  .row { display: grid; gap: 10px; }
+  .row-4 { grid-template-columns: repeat(4, 1fr); }
+  .row-2 { grid-template-columns: 1fr 1fr; }
+
+  .box {
+    border: 1.5px solid; border-radius: 9px; padding: 8px 10px 9px;
+    background: var(--paper);
+  }
+  .box .t { font-weight: 700; font-size: 12px; display: block; margin-bottom: 2px; }
+  .box .f { font-family: ui-monospace, Consolas, monospace; font-size: 10.5px; opacity: 0.85; display: block; margin-bottom: 4px; }
+  .box .r { font-size: 11px; line-height: 1.35; }
+
+  /* layer color skins */
+  .l-untrusted { background: var(--untrusted-bg); border-color: var(--untrusted-br); }
+  .l-untrusted .layer-tag { background: var(--untrusted-br); color: #fff; }
+  .l-untrusted .free { color: var(--untrusted-tx); font-weight: 600; }
+
+  .l-skill { background: var(--skill-bg); border-color: var(--skill-br); }
+  .l-skill .layer-tag { background: var(--skill-br); color: #fff; }
+  .l-skill .box { border-color: var(--skill-br); color: var(--skill-tx); }
+
+  .l-harness { background: var(--harn-bg); border-color: var(--harn-br); }
+  .l-harness .layer-tag { background: var(--harn-br); color: #fff; }
+  .l-harness .box { border-color: var(--harn-br); color: var(--harn-tx); }
+  .l-harness .box.llm { background: var(--llm-bg); border-color: var(--llm-br); color: var(--llm-tx); }
+
+  .l-code { background: var(--det-bg); border-color: var(--det-br); }
+  .l-code .layer-tag { background: var(--det-br); color: #fff; }
+  .l-code .box { border-color: var(--det-br); color: var(--det-tx); }
+  .l-code .box.reg { background: var(--reg-bg); border-color: var(--reg-br); }
+
+  .l-ui { background: var(--ui-bg); border-color: var(--ui-br); }
+  .l-ui .layer-tag { background: var(--ui-br); color: #fff; }
+  .l-ui .box { border-color: var(--ui-br); color: var(--ui-tx); }
+
+  /* the seam */
+  .seam {
+    background: var(--seam-bg); color: var(--seam-tx);
+    border-radius: 10px; padding: 10px 16px; margin: 14px 0;
+    display: flex; align-items: center; justify-content: center; gap: 14px;
+    font-weight: 700; font-size: 13px; letter-spacing: 0.01em;
+  }
+  .seam .j { color: #93c5fd; } .seam .e { color: #86efac; }
+  .seam .mid { opacity: 0.55; font-weight: 500; }
+
+  /* arrows between layers */
+  .arrow { display: flex; align-items: center; justify-content: center; color: var(--ink-soft); }
+  .arrow .lbl { font-size: 10.5px; background: var(--paper); padding: 0 8px; }
+  .arrow .line { flex: 1; border-top: 1.5px dashed var(--rule); }
+  .arrow .tip { font-size: 13px; margin-left: -3px; }
+
+  .legend {
+    margin-top: 18px; border-top: 1px solid var(--rule); padding-top: 12px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 22px; font-size: 11px;
+  }
+  .legend .item { display: flex; gap: 7px; align-items: flex-start; }
+  .sw { width: 13px; height: 13px; border-radius: 3px; border: 1.5px solid; flex: none; margin-top: 1px; }
+  .legend b { color: var(--ink); }
+  .legend span { color: var(--ink-soft); }
+
+  .foot { margin-top: 12px; font-size: 10.5px; color: var(--ink-soft); display: flex; justify-content: space-between; }
+  .pill { display: inline-block; padding: 1px 7px; border: 1px solid var(--rule); border-radius: 999px; }
+</style>
+</head>
+<body>
+
+  <h1>Clinical Care-Partner · Architecture</h1>
+  <p class="sub">v3.1 · one chat route, a typed tool loop · <code>claude-opus-4-7</code> · Vercel AI SDK 6 · Next.js 16</p>
+  <p class="oneliner"><b>Judgment up, execution down.</b> A thin clinical router that hands off to deterministic, safety-audited skills. The model reasons about the differential and picks a dose <i>rule by id</i>. The tools own every number. The seam between the skill and the tools is the whole design.</p>
+
+  <div class="stack">
+
+    <!-- ───── UNTRUSTED INPUT ───── -->
+    <section class="layer l-untrusted">
+      <div class="layer-head">
+        <span class="layer-tag">Untrusted input</span>
+        <span class="layer-note">crosses the trust boundary as <b>data</b>, never as instructions</span>
+      </div>
+      <div class="row row-2">
+        <div class="box">
+          <span class="t">Clinician note / transcript</span>
+          <span class="f">app/console/session-rail.tsx · note-pane.tsx</span>
+          <span class="r free">5 pre-loaded cases + free-type. Seeded as the first user message; the skill wraps it in “treat as data” delimiters.</span>
+        </div>
+        <div class="box">
+          <span class="t">Region toggle (NZ / AU)</span>
+          <span class="f">app/console/region-toggle.tsx → care-partner-region cookie</span>
+          <span class="r free">Jurisdiction is a UI fact, not a model guess. Written to a cookie the route reads server-side.</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="arrow"><span class="line"></span><span class="lbl">POST /api/chat &nbsp;·&nbsp; { messages: UIMessage[] } + cookie</span><span class="line"></span><span class="tip">▼</span></div>
+
+    <!-- ───── FAT SKILL ───── -->
+    <section class="layer l-skill">
+      <div class="layer-head">
+        <span class="layer-tag">Fat skill</span>
+        <span class="layer-note">committed, reviewer-readable, portable across runtimes. <b>Zero clinical numbers.</b></span>
+      </div>
+      <div class="row row-4">
+        <div class="box">
+          <span class="t">SKILL.md</span>
+          <span class="f">skills/dose-calculator/SKILL.md</span>
+          <span class="r">Drives the loop. 5 safety invariants; owns the untrusted-note delimiters; loaded as the system prompt.</span>
+        </div>
+        <div class="box">
+          <span class="t">references/</span>
+          <span class="f">croup-flowchart.md · refusal-taxonomy.md</span>
+          <span class="r">Workflow shape + the RefusalKind taxonomy. Shape only. The numbers live in the registry.</span>
+        </div>
+        <div class="box">
+          <span class="t">Zod validators</span>
+          <span class="f">scripts/validate_dose_card.ts</span>
+          <span class="r">Card schemas. The single source of truth the tools and UI encode against.</span>
+        </div>
+        <div class="box">
+          <span class="t">eval cases</span>
+          <span class="f">skills/dose-calculator/evals/cases.jsonl</span>
+          <span class="r">Named-check fixtures (compute / refuse / cap / out-of-scope) used by the contract test.</span>
+        </div>
+      </div>
+    </section>
+
+    <div class="arrow"><span class="line"></span><span class="lbl">SKILL.md → system prompt &nbsp;(lib/skill-loader.ts)</span><span class="line"></span><span class="tip">▼</span></div>
+
+    <!-- ───── THIN HARNESS ───── -->
+    <section class="layer l-harness">
+      <div class="layer-head">
+        <span class="layer-tag">Thin harness</span>
+        <span class="layer-note">~250 LOC · wires the tools, pins the note in-route, reads the cookie. <b>No server-side validator.</b></span>
+      </div>
+      <div class="row row-2" style="margin-bottom:10px;">
+        <div class="box llm">
+          <span class="t">streamText: the model loop</span>
+          <span class="f">app/api/chat/route.ts · claude-opus-4-7 · stopWhen: stepCountIs(5)</span>
+          <span class="r">The model builds the differential, classifies severity vs the registry’s rows, and <b>picks <code>dose_rule_id</code></b>. It authors the rule <i>selection</i>, never the numbers.</span>
+        </div>
+        <div class="box">
+          <span class="t">In-route note pin + region inject</span>
+          <span class="f">route.ts: firstUserContent() → system msg · getRegion() (default NZ, never throws)</span>
+          <span class="r">Turn 2+ re-injects the pinned note + “Active jurisdiction: {region}. Do not infer from the note” (the F-1 fix). Server owns the fact.</span>
+        </div>
+      </div>
+      <div class="row row-4">
+        <div class="box"><span class="t">load_guideline</span><span class="f">tools/load_guideline.ts</span><span class="r">(condition, region) → guideline payload, or typed refusal.</span></div>
+        <div class="box"><span class="t">calculate_dose ★</span><span class="f">tools/calculate_dose.ts</span><span class="r">(guideline_id, dose_rule_id, weight_kg) → the dose. The safety spine.</span></div>
+        <div class="box"><span class="t">get_reassessment_plan</span><span class="f">tools/get_reassessment_plan.ts</span><span class="r">Longitudinal watch / branch plan, or typed refusal.</span></div>
+        <div class="box"><span class="t">ask_user</span><span class="f">tools/ask_user.ts</span><span class="r">Typed slot request (weight_kg / severity / region…). Asks, never estimates.</span></div>
+      </div>
+    </section>
+
+    <!-- ───── THE SEAM ───── -->
+    <div class="seam">
+      <span class="j">◤ JUDGMENT — the skill picks <code style="color:#bfdbfe">dose_rule_id</code></span>
+      <span class="mid">═══ the four tools are the visible boundary ═══</span>
+      <span class="e">execution — the tool does the math ◢</span>
+    </div>
+
+    <!-- ───── FAT CODE ───── -->
+    <section class="layer l-code">
+      <div class="layer-head">
+        <span class="layer-tag">Fat code (deterministic)</span>
+        <span class="layer-note">owns every numeric field · refusals are typed · exact-assertion testable</span>
+      </div>
+      <div class="row row-2" style="margin-bottom:10px;">
+        <div class="box">
+          <span class="t">calculate_dose: owns every number</span>
+          <span class="f">tools/calculate_dose.ts · raw → floor(min_mg) → round (GUARD-8) → cap (GUARD-5, last)</span>
+          <span class="r">Looks the rule up via <code>getDoseRule()</code>; the model cannot author drug, mg/kg, cap, or rounding. <code>toFixed(9)</code> float-snap keeps 14.2×0.15 = <b>2.13</b>, not 2.12. Refusal: <code>{kind:"refusal", reason}</code>.</span>
+        </div>
+        <div class="box reg">
+          <span class="t">registry/guidelines.ts: the clinical truth</span>
+          <span class="f">NZ + AU croup · severity_rows · dose_rules · differential_check</span>
+          <span class="r">The single source of every number. <code>human_verified:true</code> gates execution. Croup dex 0.15 mg/kg first-line, 0.6 severe, <b>max 12 mg</b>, oral.</span>
+        </div>
+      </div>
+      <div class="row row-2">
+        <div class="box"><span class="t">get_reassessment_plan</span><span class="f">tools/get_reassessment_plan.ts</span><span class="r">Reassess timing + conditional branches from the same guideline. Refusal: <code>{status:"refusal", reason}</code> (6 kinds, incl. the legitimate <code>no_reassessment_required</code>).</span></div>
+        <div class="box"><span class="t">load_guideline</span><span class="f">tools/load_guideline.ts</span><span class="r">Cookie region is authoritative (<code>effectiveRegion = region</code>). Refusal: <code>{status:"refusal", reason}</code> (<code>out_of_scope</code> / <code>region_unknown</code>).</span></div>
+      </div>
+    </section>
+
+    <div class="arrow"><span class="line"></span><span class="lbl">tool output → typed UIMessagePart &nbsp;(tool-calculate_dose, tool-ask_user…) &nbsp;·&nbsp; toUIMessageStreamResponse()</span><span class="line"></span><span class="tip">▼</span></div>
+
+    <!-- ───── UI ───── -->
+    <section class="layer l-ui">
+      <div class="layer-head">
+        <span class="layer-tag">UI</span>
+        <span class="layer-note">useChat (@ai-sdk/react) · cards render from the typed tool part, not from model prose</span>
+      </div>
+      <div class="row row-4">
+        <div class="box"><span class="t">DoseCard</span><span class="f">app/console/dose-card.tsx</span><span class="r">Dose as the visual headline; reads numbers off the tool result. Amber CAPPED chip when the cap fires.</span></div>
+        <div class="box"><span class="t">ReassessmentCard</span><span class="f">app/console/reassessment-card.tsx</span><span class="r">Clock badge · watch-for chips · branch buttons. Hydration-safe time.</span></div>
+        <div class="box"><span class="t">RefusalCard</span><span class="f">app/console/refusal-card.tsx</span><span class="r">RefusalKind verbatim. Amber for clinical decisions; red reserved for technical errors.</span></div>
+        <div class="box"><span class="t">AskUserForm</span><span class="f">app/console/ask-user-form.tsx</span><span class="r">Inline typed input (number / select). The missing-weight prompt, not a model-authored number.</span></div>
+      </div>
+    </section>
+
+  </div><!-- /stack -->
+
+  <!-- ───── LEGEND ───── -->
+  <div class="legend">
+    <div class="item"><span class="sw" style="background:var(--untrusted-bg);border-color:var(--untrusted-br);"></span><span><b>Untrusted input.</b> The note crosses as data, never instructions. Red also = technical error in-app.</span></div>
+    <div class="item"><span class="sw" style="background:var(--skill-bg);border-color:var(--skill-br);"></span><span><b>Fat skill.</b> SKILL.md, references, Zod schemas, eval cases. Committed, reviewer-readable, portable.</span></div>
+    <div class="item"><span class="sw" style="background:var(--llm-bg);border-color:var(--llm-br);"></span><span><b>LLM judgment.</b> Picks <code>dose_rule_id</code>, classifies severity, phrases the differential. Never authors a number.</span></div>
+    <div class="item"><span class="sw" style="background:var(--harn-bg);border-color:var(--harn-br);"></span><span><b>Thin harness.</b> streamText + 4 tools + skill-loader + in-route note pin + cookie region. ~250 LOC.</span></div>
+    <div class="item"><span class="sw" style="background:var(--det-bg);border-color:var(--det-br);"></span><span><b>Deterministic execution.</b> The 4 tools + the typed registry. Owns every numeric field; refusals are typed.</span></div>
+    <div class="item"><span class="sw" style="background:var(--ui-bg);border-color:var(--ui-br);"></span><span><b>UI.</b> Heidi-grammar 3-column console; cards render from the validated tool part, not model prose.</span></div>
+  </div>
+
+  <div class="foot">
+    <span>Trust layering (enforced, not asserted): <code>[SYSTEM trusted] &gt; [GUIDELINE curated] &gt; [NOTE untrusted]</code>. There is no model-authored-number channel.</span>
+    <span class="pill">v1.4.0.0 · commit 3315d07+</span>
+  </div>
+
+</body>
+</html>
