@@ -61,6 +61,12 @@ Called at most once per session unless the previous answer was incomplete.
 
 `weight_missing`, `implausible_weight`, `invalid_dose_rule_id`, `rule_not_verified`, `airway_emergency`, `unresolved_dangers`, `out_of_scope`.
 
+The union spans three sources — each reason is produced by exactly one of them:
+
+- **`calculate_dose`** → `weight_missing`, `implausible_weight`, `invalid_dose_rule_id`, `rule_not_verified` (the calculator refusing bad inputs).
+- **`load_guideline`** → `out_of_scope`, `region_unknown` (retrieval refusing an unmodelled condition or region — `region_unknown` not listed above as it is a retrieval-only reason).
+- **Model prose abstention** → `airway_emergency`, `unresolved_dangers` (no tool returns these; the skill voices them directly as a clinical judgement — see SKILL.md invariants 3 & 4).
+
 ## The structured handoff
 
 When the workflow succeeds, the skill emits two fenced JSON blocks alongside qualitative prose:
