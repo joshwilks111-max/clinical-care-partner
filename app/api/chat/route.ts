@@ -6,52 +6,58 @@
 // fat skill" per D1/D10.
 //
 // FLOW PER REQUEST:
-//   1. Parse body { messages: ModelMessage[] } → 400 on empty/missing.
+//   1. Parse body { messages: UIMessage[] } → 400 on empty/missing.
 //   2. Read region from cookie → "NZ" | "AU" (default NZ, never throws).
 //   3. Pin originalNote from first user message → inject system context on
 //      multi-turn requests (turn 2+) so the skill can cross-reference the
 //      patient note without re-reading the full history.
 //   4. Call streamText with the 4 harness tools (load_guideline,
 //      calculate_dose, get_reassessment_plan, ask_user). The skill drives
-//      the tool-call loop; the harness validates the structured output in
-//      onFinish (validateResponse).
-//   5. Return toUIMessageStreamResponse(). The validator output (cards +
-//      refusal + blocked) is attached as an X-Validated-Response header so
-//      the client can render structured cards without parsing the prose.
+//      the tool-call loop; each tool call's output flows to the client
+//      natively as a typed UIMessagePart (no server-side validator needed).
+//   5. Return result.toUIMessageStreamResponse({originalMessages}) so the
+//      client's useChat hook can parse the canonical UI-message-stream wire
+//      format and surface typed tool parts (tool-calculate_dose etc.) for
+//      the chat panel to render as DoseCard / ReassessmentCard / RefusalCard.
 //
 // SAFETY:
 //   - The LLM NEVER authors a number. tools/calculate_dose.ts owns every dose
 //     value; the tool call arguments (guideline_id, dose_rule_id, weight_kg)
 //     are all LLM-authored but the numeric output is deterministic registry
 //     math.
-//   - Refusals are STRUCTURED RETURNS from all 4 tools (never thrown).
-//   - The validator (lib/response-validator.ts) blocks any card that cites a
-//     refused tool — a hard runtime guard on the judgment→execution boundary.
+//   - Refusals are STRUCTURED RETURNS from all 4 tools (never thrown). The
+//     SDK ships them to the client as part.output where state ==
+//     "output-available"; the chat panel switches on part.type and renders
+//     the matching refusal card.
 //   - The untrusted clinical note is DATA (wrapped by the skill's SKILL.md
 //     delimiters), never instructions.
+//   - The model has NO channel to author a dose number into prose that the
+//     client would render: with typed tool parts, the structured tool output
+//     IS the channel. The skill instructs the model to call the tool, not to
+//     paint the result — and the renderer reads the tool output, not the
+//     model's text. The contradiction-prone fence-emit pattern is gone.
 //
 // EDGE CASES:
 //   - Empty messages[] or no user message → 400 JSON error.
 //   - streamText throws (model error, network) → 500 JSON error.
-//   - onFinish with empty steps → validateResponse returns {text, refusal: null,
-//     dose_card: null, reassessment_card: null} — prose-only or no-op.
-//   - Tool execute throws → SDK surface as a tool error; the model handles it;
-//     the validator still runs on whatever steps completed.
+//   - Tool execute throws → SDK surfaces as a tool error; the model handles
+//     it; the next part has state "output-error".
 
 import { anthropic } from "@ai-sdk/anthropic";
-import { streamText, stepCountIs, type ModelMessage } from "ai";
+import {
+  streamText,
+  stepCountIs,
+  convertToModelMessages,
+  type ModelMessage,
+  type UIMessage,
+} from "ai";
 import { z } from "zod";
 import { calculate_dose } from "@/tools/calculate_dose";
 import { load_guideline } from "@/tools/load_guideline";
 import { get_reassessment_plan } from "@/tools/get_reassessment_plan";
 import { ask_user } from "@/tools/ask_user";
-import { validateResponse } from "@/lib/response-validator";
 import { getSystemPrompt } from "@/lib/skill-loader";
 import { getRegion } from "@/lib/region";
-// lib/tool-call-id is still used by route.test.ts mocks (synthesising
-// SDK toolCallIds) but the route itself doesn't need to mint ids — the
-// SDK gives us one in the execute options, see the fix at the execute
-// closures below.
 
 // Node runtime (NOT edge): the AI SDK + node:crypto need it.
 // maxDuration 300s gives the opus-4-7 multi-step loop headroom.
@@ -71,32 +77,34 @@ const MAX_STEPS = 5;
 // ---------------------------------------------------------------------------
 
 /**
- * Return the content string of the FIRST user-role message, or null if none
- * exists. The original note is pinned here so subsequent turns can reference
- * it without re-extracting it from the full history.
+ * Return the text of the FIRST user-role message in a UIMessage[] array, or
+ * null if none exists. The original note is pinned here so subsequent turns
+ * can reference it without re-extracting it from the full history.
+ *
+ * UIMessages carry their text in parts[].type === "text"; we join all text
+ * parts of the first user message.
  */
-function firstUserContent(messages: ModelMessage[]): string | null {
+function firstUserContent(messages: UIMessage[]): string | null {
   for (const m of messages) {
-    if (m.role === "user") {
-      // In SDK 6 a user message's content may be a string or an array of parts.
-      // We only need the text; if it's an array, join text parts.
-      if (typeof m.content === "string") return m.content;
-      if (Array.isArray(m.content)) {
-        const text = m.content
-          .filter((p): p is { type: "text"; text: string } => p.type === "text")
-          .map((p) => p.text)
-          .join(" ");
-        return text || null;
-      }
+    if (m.role === "user" && Array.isArray(m.parts)) {
+      const text = m.parts
+        .filter(
+          (p): p is { type: "text"; text: string } & typeof p =>
+            p.type === "text" &&
+            typeof (p as { text?: unknown }).text === "string",
+        )
+        .map((p) => p.text)
+        .join(" ");
+      if (text) return text;
     }
   }
   return null;
 }
 
 /**
- * Returns true iff the message array already carries a system message whose
- * content includes the given originalNote string. Used to avoid double-
- * injecting on requests that already include a system message.
+ * Returns true iff the ModelMessage array (post-conversion) already carries
+ * a system message. Used to avoid double-injecting the originalNote system
+ * context on requests where the client already supplied one.
  */
 function hasSystemMessage(messages: ModelMessage[]): boolean {
   return messages.some((m) => m.role === "system");
@@ -108,8 +116,12 @@ function hasSystemMessage(messages: ModelMessage[]): boolean {
 
 export async function POST(request: Request): Promise<Response> {
   // ─── 1. Parse body ────────────────────────────────────────────────────────
+  //
+  // The client uses useChat from @ai-sdk/react, which POSTs the messages
+  // array as UIMessage[] (each message has parts[]). We pass these through
+  // convertToModelMessages before handing to streamText.
 
-  let messages: ModelMessage[];
+  let uiMessages: UIMessage[];
   try {
     const body = (await request.json()) as { messages?: unknown };
     if (!Array.isArray(body.messages) || body.messages.length === 0) {
@@ -118,7 +130,7 @@ export async function POST(request: Request): Promise<Response> {
         { status: 400 },
       );
     }
-    messages = body.messages as ModelMessage[];
+    uiMessages = body.messages as UIMessage[];
   } catch {
     return Response.json(
       { error: "Could not parse request body as JSON." },
@@ -128,7 +140,7 @@ export async function POST(request: Request): Promise<Response> {
 
   // ─── 2. Validate there is at least one user message ───────────────────────
 
-  const originalNote = firstUserContent(messages);
+  const originalNote = firstUserContent(uiMessages);
   if (originalNote === null) {
     return Response.json(
       { error: "Request must include at least one user message." },
@@ -160,24 +172,31 @@ export async function POST(request: Request): Promise<Response> {
       : null,
   );
 
-  // ─── 4. Optionally inject originalNote system context on turn 2+ ──────────
+  // ─── 4. Convert UIMessage[] → ModelMessage[] for streamText ──────────────
   //
-  // On multi-turn conversations (messages.length > 1) where no system message
-  // has already been provided, we prepend a minimal context block so the skill
-  // can always reference the original note regardless of how far into the
-  // history it is. This is deliberately narrow: we never modify single-turn
-  // requests (the full note IS the first user message), and we never duplicate
-  // if a system message already exists.
+  // The SDK's convertToModelMessages helper handles the UI↔model conversion
+  // including tool-result parts and multi-part user messages. After this
+  // we work in the ModelMessage shape the model API expects.
+  const modelMessages = await convertToModelMessages(uiMessages);
 
-  const enrichedMessages: ModelMessage[] = [...messages];
-  if (messages.length > 1 && !hasSystemMessage(messages)) {
+  // ─── 5. Optionally inject originalNote system context on turn 2+ ──────────
+  //
+  // On multi-turn conversations (uiMessages.length > 1) where no system
+  // message has already been provided, we prepend a minimal context block
+  // so the skill can always reference the original note regardless of how
+  // far into the history it is. This is deliberately narrow: we never
+  // modify single-turn requests (the full note IS the first user message),
+  // and we never duplicate if a system message already exists.
+
+  const enrichedMessages: ModelMessage[] = [...modelMessages];
+  if (uiMessages.length > 1 && !hasSystemMessage(modelMessages)) {
     enrichedMessages.unshift({
       role: "system",
       content: `The patient under discussion: ${originalNote}`,
     } as ModelMessage);
   }
 
-  // ─── 5. Load system prompt ────────────────────────────────────────────────
+  // ─── 6. Load system prompt ────────────────────────────────────────────────
 
   let systemPrompt: string;
   try {
@@ -190,33 +209,20 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  // ─── 6. Call streamText with the 4 harness tools ─────────────────────────
+  // ─── 7. Call streamText with the 4 harness tools ─────────────────────────
   //
   // The tool object uses the SDK 6 `Tool` shape: { description, inputSchema,
-  // execute }. Each execute wraps the imported pure function and attaches a
-  // harness-generated `tool_call_id` so the validator can join prose fences
-  // to tool results by id.
+  // execute }. Each execute wraps the imported pure function. The SDK
+  // automatically ships each tool's return value to the client as a typed
+  // UIMessagePart (type: "tool-<toolName>", state: "output-available",
+  // output: <return value>) — the chat panel switches on part.type and
+  // renders DoseCard / ReassessmentCard / RefusalCard / AskUserForm.
   //
-  // IMPORTANT: tool_call_id in the execute return is NOT the SDK's internal
-  // toolCallId (which the SDK manages). It is a harness-level id that the
-  // SKILL embeds in its fenced JSON blocks; the validator uses it to look up
-  // the matching structured output. See lib/tool-call-id.ts and
-  // lib/response-validator.ts for the join contract.
+  // The `tool_call_id: toolCallId` echo in each execute return is vestigial
+  // (the SDK tracks ids natively in part.toolCallId) but harmless — it's
+  // a stable identifier the tools have always returned and the cards can
+  // still read for telemetry.
 
-  // Shared mutable slot for the validator result. Written inside onFinish
-  // (which runs before the stream drains) and read when building the response
-  // headers. Using let + assignment (not a ref object) is safe because
-  // onFinish is guaranteed to complete before toUIMessageStreamResponse()
-  // resolves the final bytes to the client.
-  let validatedResult: ReturnType<typeof validateResponse> | null = null;
-
-  // ─── 6 + 7. streamText → validate → stream response ───────────────────────
-  //
-  // Structured in a single try/catch so the streamResult local is always
-  // initialised before toUIMessageStreamResponse() is called. TypeScript
-  // cannot narrow across a try/catch boundary for a pre-declared variable
-  // whose assignment happens inside the block, so we compute the Response
-  // inside the try and early-return the 500 on error.
   try {
     const streamResult = streamText({
       model: anthropic(MODEL),
@@ -248,12 +254,6 @@ export async function POST(request: Request): Promise<Response> {
           ) => {
             const effectiveRegion = toolRegion ?? region;
             const result = load_guideline(condition, effectiveRegion);
-            // Echo the SDK's own toolCallId back into the result so the
-            // skill embeds it in any fenced JSON block; the validator joins
-            // on tr.toolCallId from event.steps[].toolResults — the SAME id.
-            // (Earlier revisions minted a parallel id via newToolCallId();
-            // the skill couldn't see it, so every dose-card was blocked
-            // with orphan_tool_call_id — caught by the first live smoke.)
             return { ...result, tool_call_id: toolCallId };
           },
         },
@@ -326,7 +326,7 @@ export async function POST(request: Request): Promise<Response> {
         // Structured slot tool. The skill calls this when a clinically-
         // required piece of information is missing (weight, severity, region).
         // The harness UI surfaces an inline form keyed by `kind`; the
-        // clinician's answer flows back as the tool result `{ answer: string }`.
+        // clinician's answer flows back via the SDK's addToolOutput path.
         ask_user: {
           description:
             "Request a missing piece of clinical information from the clinician via a structured inline form. Use when the note lacks weight, severity, or other required data. The clinician's answer is returned as `answer` in the next step.",
@@ -353,65 +353,20 @@ export async function POST(request: Request): Promise<Response> {
           },
         },
       },
-
-      // ── onFinish: validate the completed multi-step response ─────────────
-      //
-      // Runs after ALL steps complete (per D2). Walks every step's toolResults
-      // and aggregates prose to extract + validate fenced JSON blocks. The
-      // result is stored in the shared `validatedResult` slot and attached
-      // to the response as a header so the client can render structured cards
-      // without parsing the prose stream.
-      onFinish: async (event) => {
-        // The OnFinishEvent.steps is StepResult[], each with .text and
-        // .toolResults (TypedToolResult[]). The validator's OnFinishLike
-        // interface matches this shape structurally — cast is safe.
-        validatedResult = validateResponse(
-          event as Parameters<typeof validateResponse>[0],
-        );
-      },
     });
 
-    // ─── 7. Return the streaming response with validator metadata ───────────
+    // Return the canonical UI-message-stream response. The client's
+    // useChat({transport: new DefaultChatTransport({api: "/api/chat"})})
+    // parses this stream natively: text content arrives as text-delta
+    // parts, tool calls arrive as tool-<toolName> parts with progressive
+    // state ("input-streaming" → "input-available" → "output-available"),
+    // and the AssistantBubble switches on part.type to render each.
     //
-    // DELIVERY STRATEGY:
-    // We await streamResult.steps (a PromiseLike that "automatically consumes
-    // the stream" per the SDK docs) to ensure the full model generation is
-    // complete and onFinish has fired BEFORE we build the response. This gives
-    // us a populated validatedResult to attach as a response header.
-    //
-    // The tradeoff: the route buffers the full generation before sending the
-    // SSE body to the client (true chunk-by-chunk streaming is not realised).
-    // For this care-partner harness that is acceptable — clinical notes are
-    // short, the multi-step loop is bounded at 5 steps, and the structured
-    // cards (dose_card, reassessment_card) are only meaningful when the full
-    // response is validated. The SSE wire format is preserved for the client
-    // SDK's useChat hook.
-    //
-    // The header approach works because the validator result is always small
-    // (JSON with 1-2 cards). If it ever exceeds HTTP header limits the
-    // delivery mechanism should move to a trailing SSE data event.
-    await streamResult.steps;
-
-    const streamingResponse = streamResult.toUIMessageStreamResponse();
-
-    // Build a mutable response so we can append the header. Clone preserves
-    // the streaming body; we only add headers.
-    const responseHeaders = new Headers(streamingResponse.headers);
-    if (validatedResult !== null) {
-      // encodeURIComponent ensures the JSON is Latin-1-safe for HTTP headers.
-      // The validator result may contain non-ASCII chars (e.g. "→" U+2192 in
-      // calculation_trace strings from calculate_dose). Headers.set() rejects
-      // any byte > 255 (ByteString constraint). The client decodes with
-      // decodeURIComponent when reading X-Validated-Response.
-      responseHeaders.set(
-        "X-Validated-Response",
-        encodeURIComponent(JSON.stringify(validatedResult)),
-      );
-    }
-
-    return new Response(streamingResponse.body, {
-      status: streamingResponse.status,
-      headers: responseHeaders,
+    // originalMessages preserves the UI message ids across the streaming
+    // boundary so the client can correlate streamed parts to its
+    // optimistically-rendered messages.
+    return streamResult.toUIMessageStreamResponse({
+      originalMessages: uiMessages,
     });
   } catch (err) {
     // streamText itself can throw on invalid configuration or network errors

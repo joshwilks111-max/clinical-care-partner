@@ -30,7 +30,7 @@ For deeper reference material, you have three files available on demand (read on
 
 These are the rules that make this skill safe to plug into any runtime — a chat surface, a scribe, a voice agent, an MCP server. Internalise the reason for each, not just the rule.
 
-1. **Numbers belong in the dose-card JSON block, not in prose.** The dose value, the cap, the weight you used, and any percentages all render from the validated `calculate_dose` result via the UI component the runtime is responsible for. If you mention a number in prose, the UI will show it twice — ugly at best, contradictory at worst. The card is canonical; the prose is qualitative.
+1. **Numbers belong in the calculate_dose tool output, not in prose.** The dose value, the cap, the weight you used, and any percentages all render from the `calculate_dose` tool's structured output via the UI component the runtime is responsible for. With Vercel AI SDK 6 typed tool parts, the tool's `output` flows to the client as a `tool-calculate_dose` UIMessagePart and the chat panel renders the dose card directly from it. If you mention a number in prose, the UI will show it twice — ugly at best, contradictory at worst. The tool output is canonical; the prose is qualitative.
 
 2. **Never write a citation in free text.** `source_version` and `source_url` come back from the tool. The runtime renders them as a chip on the dose card. If you write "per Starship 2020" in prose, you've bypassed the validator — that citation is no longer tied to the validated tool result. Discuss the case clinically; let the chip carry the source.
 
@@ -80,7 +80,7 @@ If `fallback:true` is returned, the exact regional guideline was not available a
 
 Call `calculate_dose(guideline_id, dose_rule_id, weight_kg)`.
 
-If the tool returns `status:"ok"`, hold the result and proceed to Phase 5. The dose-card block and the reassessment-card block are emitted together at the end so the clinician sees the full management picture in one response, not in two scrolls.
+If the tool returns `status:"ok"`, hold the result and proceed to Phase 5. The dose card and the reassessment card both render automatically from their respective tool outputs (typed `UIMessagePart`s the SDK ships to the client) — the clinician sees the full management picture in one response, not in two scrolls.
 
 If the tool returns `status:"refusal"`, present in the refusal template (see below) and stop. Do not call `get_reassessment_plan` after a dose refusal — there is no dose to reassess.
 
@@ -109,7 +109,7 @@ Do not invent a reassessment plan when the tool refuses. The whole point of Phas
 
 ### Success template
 
-Two-part prose, then two fenced JSON blocks (or one if Phase 5 refused matter-of-factly with `no_reassessment_required` — see below).
+Two-part prose. The runtime renders the dose-card and reassessment-card directly from each tool's structured output — you do not emit JSON fences or paint card data into prose.
 
 Prose:
 
@@ -119,32 +119,9 @@ Plan: <qualitative route + qualitative reassessment guidance>.
 Reassessment: <one-line on what to watch for, qualitatively — no numbers, no minutes, no SpO2 thresholds>.
 ```
 
-Then the dose-card:
+The Vercel AI SDK 6 surfaces each tool call's `output` to the client as a typed `UIMessagePart` (`type: "tool-calculate_dose"`, `type: "tool-get_reassessment_plan"`). The chat panel reads `part.output` and renders the matching card. **Do not** re-emit the tool's numeric fields (`dose_mg`, `reassess_in_minutes`, `watch_for`, `next_branches`, `universal_rails`, `source_version`, `source_url`) in your prose or in any JSON block — they are already on screen via the tool output, and re-emitting them creates a contradiction-prone channel for the model to author a different number than the tool returned. The structural safety property is: tool output IS the data; the model speaks only prose qualitatively.
 
-```dose-card
-{
-  "tool_call_id": "<calculate_dose call id>",
-  "drug": "<from tool>",
-  "route": "<from tool>",
-  "severity_row": "<row label>",
-  "assessment": "<one-line>",
-  "plan": "<one-line>"
-}
-```
-
-Then the reassessment-card (when Phase 5 returned ok):
-
-```reassessment-card
-{
-  "tool_call_id": "<get_reassessment_plan call id>",
-  "watch_for_summary": "<your one-line summary of what to watch for>",
-  "next_steps_summary": "<your one-line summary of the conditional branches>"
-}
-```
-
-The runtime's validator looks up each `tool_call_id`, pulls the numeric and structured fields (`dose_mg`, `reassess_in_minutes`, `watch_for`, `next_branches`, `universal_rails`, `source_version`, `source_url`) from the validated tool results, and renders both cards. You do not include those fields in either block. The two cards render together as a single management view.
-
-If Phase 5 returned `no_reassessment_required` (a legitimate clinical state), emit the dose-card only and add one prose sentence saying so (e.g. "No structured reassessment is modelled for this rule — single-shot drug, follow local clinical practice").
+If Phase 5 returned `no_reassessment_required` (a legitimate clinical state), add one prose sentence saying so (e.g. "No structured reassessment is modelled for this rule — single-shot drug, follow local clinical practice"). The dose card still renders from the calculate_dose tool output.
 
 ### Refusal template
 

@@ -10,21 +10,21 @@
 //         + suggested-prompt trinity (D15) as 3 outline buttons via ButtonGroup
 //       · User <Message from="user"> → claret fill, 13/13/4/13 radius
 //       · Assistant <Message from="assistant"> → ONE bubble per turn:
-//           - <Reasoning> "Thought for Ns" chip
-//           - <Sources> "N sources · View" chip
-//           - <a-title> serif headline + <a-prose> with inline-cite pills
-//           - <DoseCard>          EMBEDDED INSIDE the bubble (D14)
-//           - <ReassessmentCard>  EMBEDDED INSIDE the bubble
-//           - <RefusalCard>       on refusal branches (amber, NEVER red)
-//           - <AskUserForm>       on ask_user tool branches (inline, not modal)
+//           - <a-prose> render of text parts
+//           - <DoseCard>          when part.type === "tool-calculate_dose"
+//           - <ReassessmentCard>  when part.type === "tool-get_reassessment_plan"
+//           - <RefusalCard>       on any tool refusal output
+//           - <AskUserForm>       on tool-ask_user parts
 //   - <Composer>: context chip showing originalNote pin (D13) + PromptInput
 //     textarea + claret send button + Lucide-icon tool row
 //   - Footer: legalese line + <RegionToggle>
 //
-// Wiring: this v1 ships a minimal state machine — messages array + isStreaming
-// flag + sendMessage(text) helper. The real /api/chat POST happens in Phase 3
-// (Lane F doesn't wire that; the prompt says it's the route's job). We expose
-// `onSubmit` and `messages` so the parent can wire whatever transport it likes.
+// Wiring: this panel renders the canonical SDK 6 UIMessage shape. The parent
+// (console.tsx) owns the useChat hook + state; we receive `messages`,
+// `status`, `error`, `regenerate`, and emit `onSubmit(text)` for user turns.
+// The SDK's typed tool parts mean we don't need a server-side validator or
+// a custom response header — each tool call surfaces in messages[].parts[]
+// as a typed part with the tool name as the discriminator.
 
 "use client";
 
@@ -37,6 +37,13 @@ import {
   Plus,
   Send,
 } from "lucide-react";
+import {
+  isToolUIPart,
+  type UIMessage,
+  type UIMessagePart,
+  type UIDataTypes,
+  type UITools,
+} from "ai";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -45,23 +52,6 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/components/lib/utils";
 import { Message, MessageContent } from "@/components/ai-elements/message";
 import { Shimmer } from "@/components/ai-elements/shimmer";
-import {
-  Reasoning,
-  ReasoningContent,
-  ReasoningTrigger,
-} from "@/components/ai-elements/reasoning";
-import {
-  Sources,
-  SourcesContent,
-  SourcesTrigger,
-  Source,
-} from "@/components/ai-elements/sources";
-import {
-  InlineCitation,
-  InlineCitationCard,
-  InlineCitationCardBody,
-  InlineCitationCardTrigger,
-} from "@/components/ai-elements/inline-citation";
 import { DoseCard, type DoseCardProps } from "./dose-card";
 import {
   ReassessmentCard,
@@ -71,76 +61,6 @@ import { RefusalCard } from "./refusal-card";
 import { AskUserForm, type AskUserKind } from "./ask-user-form";
 import { RegionToggle } from "./region-toggle";
 import type { AnyRefusalKind } from "@/tools/types";
-
-// ─── Message types ─────────────────────────────────────────────────────────
-// The thread is heterogeneous: user messages are plain text; assistant
-// messages may carry ANY combination of prose, dose-card, reass-card,
-// refusal, ask-user, or sources. We model that with a discriminated union
-// keyed off `role` and a content array for the assistant turn so the
-// renderer doesn't have to special-case absent fields.
-
-export interface ChatSource {
-  id: string;
-  label: string;
-  url?: string;
-}
-
-export interface InlineCite {
-  label: string;
-  source_version: string;
-  source_url?: string;
-}
-
-export interface AssistantContent {
-  /** Optional "Thought for Ns" chip text. Omit to hide. */
-  reasoning?: string;
-  /** Optional sources chip — "N sources · View". */
-  sources?: ChatSource[];
-  /** Optional serif headline above the prose. */
-  title?: string;
-  /** Prose body. Plain text in v1; Phase 3 may swap to streaming Markdown. */
-  prose?: string;
-  /** Inline citations to render after the prose as a small chip row. */
-  citations?: InlineCite[];
-  /** Embedded dose-card. */
-  dose_card?: DoseCardProps;
-  /** Embedded reassessment-card. */
-  reassessment_card?: ReassessmentCardProps;
-  /** Embedded refusal-card. */
-  refusal?: {
-    kind: AnyRefusalKind;
-    message: string;
-    next_action?: string;
-  };
-  /** Embedded ask-user form. */
-  ask_user?: {
-    kind: AskUserKind;
-    question: string;
-  };
-  /**
-   * Inline technical-failure surface (T1, design-review 2026-05-28 D4).
-   * When the parent's POST /api/chat fails (network 404, 5xx, or any
-   * non-200 response), the parent renders an assistant turn carrying
-   * this field — the bubble shows a red <Alert variant="destructive">
-   * with the title + body copy + a "Retry" chip in the footer. Per
-   * D14 semaphore: red = technical failure (a 404 IS technical);
-   * amber = clinical safety abstention; never confuse the two.
-   *
-   * Clicking Retry fires `onRetry()` — the parent re-submits the LAST
-   * user message and replaces this assistant turn with the new attempt.
-   * The failed user turn STAYS in the thread (user sees what they sent);
-   * only the error assistant turn is replaced.
-   */
-  error?: {
-    title: string;
-    body: string;
-    onRetry?: () => void;
-  };
-}
-
-export type ChatMessage =
-  | { id: string; role: "user"; text: string }
-  | { id: string; role: "assistant"; content: AssistantContent };
 
 // ─── Context-chip data ─────────────────────────────────────────────────────
 // The composer shows a chip representing the server-derived originalNote
@@ -167,21 +87,39 @@ const SUGGESTED_PROMPTS = [
 // ─── Component ─────────────────────────────────────────────────────────────
 
 export interface ChatPanelProps {
-  /** Thread state — full history of user + assistant turns. */
-  messages: ChatMessage[];
   /**
-   * Fire on send. The parent owns the transport (POST /api/chat in
-   * Phase 3); we just hand up the typed-text string.
+   * Thread state — full history of user + assistant turns, as UIMessage[]
+   * from the SDK. Each message has parts[]; text parts render as prose,
+   * tool-<toolName> parts render as the matching card.
+   */
+  messages: UIMessage[];
+  /**
+   * Fire on send. The parent owns the transport (useChat's sendMessage);
+   * we just hand up the typed-text string.
    */
   onSubmit: (text: string) => void | Promise<void>;
   /**
    * Hard-reset hook for "+ New chat". On confirm (when thread has
-   * ≥1 message) the parent should: clear messages, DELETE session-id
-   * cookie via lib/region.clearSession(), and refocus the composer.
+   * ≥1 message) the parent should: clear messages, reset note + active
+   * session, refocus the composer.
    */
   onNewChat: () => void;
-  /** Stream-state flag — drives the Shimmer "thinking" indicator. */
+  /**
+   * Stream-state flag — drives the Shimmer "thinking" indicator. Set to
+   * true while useChat's status is "submitted" or "streaming".
+   */
   isStreaming?: boolean;
+  /**
+   * Optional error from useChat. When present we render a destructive
+   * Alert + Retry button at the bottom of the thread; clicking Retry
+   * calls onRetry (parent calls useChat's regenerate()).
+   */
+  error?: Error;
+  /**
+   * Fire to retry the last assistant generation. Parent wires to
+   * useChat's regenerate(). Omit to hide the Retry button.
+   */
+  onRetry?: () => void;
   /** Context chip for the composer (server-derived per D13). */
   originalNote?: OriginalNoteSummary;
   /**
@@ -190,6 +128,15 @@ export interface ChatPanelProps {
    * global. Production callers should omit.
    */
   confirmFn?: (message: string) => boolean;
+  /**
+   * The id of the FIRST user message — used to filter out the seeded
+   * centre-note context from the rendered thread. When the parent calls
+   * setMessages([{role:"user", parts:[{type:"text", text: noteText}]}])
+   * to seed the note as the model's context, we don't want that to
+   * render as a user bubble in the chat thread (it's already visible in
+   * the centre column). Pass undefined to render every message.
+   */
+  seededFirstMessageId?: string;
 }
 
 export function ChatPanel({
@@ -197,8 +144,11 @@ export function ChatPanel({
   onSubmit,
   onNewChat,
   isStreaming = false,
+  error,
+  onRetry,
   originalNote,
   confirmFn,
+  seededFirstMessageId,
 }: ChatPanelProps) {
   // The composer is locally controlled — we keep the textarea value in
   // state so suggested-prompt chips can PRE-FILL without submitting (D15).
@@ -273,7 +223,15 @@ export function ChatPanel({
     textareaRef.current?.focus();
   }
 
-  const isEmpty = messages.length === 0 && !isStreaming;
+  // Filter the seeded centre-note message out of the rendered thread.
+  // The note is the model's PATIENT CONTEXT — it lives in the centre
+  // column already; rendering it as a user bubble would duplicate it
+  // and confuse the clinician about what they "said".
+  const renderedMessages = seededFirstMessageId
+    ? messages.filter((m) => m.id !== seededFirstMessageId)
+    : messages;
+
+  const isEmpty = renderedMessages.length === 0 && !isStreaming;
 
   return (
     <section
@@ -310,13 +268,13 @@ export function ChatPanel({
       >
         {isEmpty && <EmptyState onPick={handleSuggestedPrompt} />}
 
-        {messages.map((m) =>
+        {renderedMessages.map((m) =>
           m.role === "user" ? (
-            <UserBubble key={m.id} text={m.text} />
+            <UserBubble key={m.id} message={m} />
           ) : (
             <AssistantBubble
               key={m.id}
-              content={m.content}
+              message={m}
               onAskSubmit={(answer) => onSubmit(answer)}
             />
           ),
@@ -326,6 +284,41 @@ export function ChatPanel({
           <div aria-label="Care Partner is thinking" className="self-start">
             <Shimmer className="text-[12.5px] italic">Thinking…</Shimmer>
           </div>
+        )}
+
+        {/* T1 (design-review 2026-05-28 D4): technical-failure surface.
+            Red <Alert variant="destructive"> per D14 (red = technical;
+            amber = clinical safety abstention). useChat surfaces the
+            error via the `error` prop; clicking Retry fires regenerate(). */}
+        {error && (
+          <Alert
+            variant="destructive"
+            data-testid="chat-error-alert"
+            aria-live="assertive"
+            className="self-start"
+          >
+            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+            <AlertTitle>Couldn't reach Care Partner</AlertTitle>
+            <AlertDescription className="flex flex-col gap-2">
+              <span>
+                {error.message || "A technical error interrupted the response."}{" "}
+                Check that ANTHROPIC_API_KEY is configured and /api/chat is
+                reachable.
+              </span>
+              {onRetry && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={onRetry}
+                  className="self-start"
+                  data-testid="chat-error-retry"
+                >
+                  Retry
+                </Button>
+              )}
+            </AlertDescription>
+          </Alert>
         )}
       </div>
 
@@ -375,12 +368,44 @@ function EmptyState({ onPick }: { onPick: (prompt: string) => void }) {
   );
 }
 
+// ─── Helpers — extract text from a UIMessage's parts ───────────────────────
+
+function extractText(parts: UIMessage["parts"]): string {
+  return parts
+    .filter(
+      (p): p is { type: "text"; text: string } & typeof p =>
+        p.type === "text" && typeof (p as { text?: unknown }).text === "string",
+    )
+    .map((p) => p.text)
+    .join("");
+}
+
+/**
+ * Type-guard for refusal-shaped tool output.
+ *
+ * The harness has two refusal conventions (per memory
+ * refusal-wrapper-two-shapes):
+ *   - calculate_dose             → { kind: "refusal", reason, message }
+ *   - load_guideline             → { status: "refusal", reason, message }
+ *   - get_reassessment_plan      → { status: "refusal", reason, message }
+ *
+ * Both carry reason + message; we accept either discriminator.
+ */
+function isRefusalOutput(
+  output: unknown,
+): output is { reason: string; message: string } {
+  if (typeof output !== "object" || output === null) return false;
+  const o = output as { kind?: unknown; status?: unknown };
+  return o.kind === "refusal" || o.status === "refusal";
+}
+
 // ─── User bubble ───────────────────────────────────────────────────────────
 // Claret fill + white text + 13/13/4/13 radius (asymmetric corner closest
 // to the avatar). The AI Elements <Message> primitive handles the
 // is-user class for us; we override the bubble paint to claret per D14.
 
-function UserBubble({ text }: { text: string }) {
+function UserBubble({ message }: { message: UIMessage }) {
+  const text = extractText(message.parts);
   return (
     <Message from="user">
       <article aria-label="You asked" className="contents">
@@ -399,17 +424,29 @@ function UserBubble({ text }: { text: string }) {
 }
 
 // ─── Assistant bubble ──────────────────────────────────────────────────────
-// THE anti-slop surface (D14). Every nested card lives INSIDE this one
-// bubble. The bubble has 13/13/13/4 radius (asymmetric corner closest
-// to the avatar), white fill, hairline border. Reasoning chip + sources
-// chip + title + prose + dose-card + reass-card + refusal + ask-user
-// all stack vertically inside.
+// THE anti-slop surface (D14). Renders message.parts[] inline in order;
+// every part (text, tool-calculate_dose, tool-get_reassessment_plan,
+// tool-load_guideline, tool-ask_user) renders in the same bubble. The
+// bubble has 13/13/13/4 radius, white fill, hairline border.
+//
+// part.type discriminator drives the renderer:
+//   - "text"                          → prose <p>
+//   - "tool-calculate_dose"           → <DoseCard> or <RefusalCard>
+//   - "tool-get_reassessment_plan"    → <ReassessmentCard> or <RefusalCard>
+//   - "tool-load_guideline"           → <RefusalCard> on refusal; nothing
+//                                        on success (the data is plumbed
+//                                        through the model's next tool call,
+//                                        not surfaced directly to clinician)
+//   - "tool-ask_user"                 → <AskUserForm> when state available
+//
+// Parts in state "input-streaming" / "input-available" render a small
+// loading indicator; "output-error" renders a small inline error.
 
 function AssistantBubble({
-  content,
+  message,
   onAskSubmit,
 }: {
-  content: AssistantContent;
+  message: UIMessage;
   onAskSubmit: (answer: string) => void;
 }) {
   return (
@@ -420,144 +457,146 @@ function AssistantBubble({
             "max-w-[96%] rounded-[13px_13px_13px_4px] border border-[var(--cream-2)] bg-white p-0",
           )}
         >
-          {/* Reasoning chip — top-left of bubble */}
-          {content.reasoning && (
-            <div className="px-3.5 pb-0 pt-2.5">
-              <Reasoning className="w-fit">
-                <ReasoningTrigger className="inline-flex items-center gap-1.5 rounded-full border border-[var(--cream-2)] bg-[var(--cream-2)] px-2.5 py-0.5 text-[11px] text-muted-foreground">
-                  <span aria-hidden="true" className="text-[var(--claret)]">
-                    ⚡
-                  </span>
-                  {content.reasoning}
-                </ReasoningTrigger>
-                <ReasoningContent className="mt-1 text-[11.5px] text-muted-foreground">
-                  {content.reasoning}
-                </ReasoningContent>
-              </Reasoning>
-            </div>
-          )}
-
-          {/* Sources chip */}
-          {content.sources && content.sources.length > 0 && (
-            <div className="px-3.5 pt-1.5">
-              <Sources>
-                <SourcesTrigger
-                  count={content.sources.length}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-[var(--cream-2)] bg-[#f1ebde] px-2.5 py-1 text-[12px] text-foreground"
-                />
-                <SourcesContent>
-                  {content.sources.map((s) => (
-                    <Source key={s.id} href={s.url ?? "#"} title={s.label} />
-                  ))}
-                </SourcesContent>
-              </Sources>
-            </div>
-          )}
-
-          {/* Body */}
-          <div className="px-3.5 pb-3 pt-2">
-            {content.title && (
-              <h3
-                className="mb-1.5 text-[18px] font-bold leading-[1.3] tracking-[-0.01em]"
-                style={{ fontFamily: "var(--serif)" }}
-              >
-                {content.title}
-              </h3>
-            )}
-            {content.prose && (
-              <p className="mb-1.5 text-[13px] leading-[1.55] text-[#3a312b]">
-                {content.prose}
-                {content.citations && content.citations.length > 0 && (
-                  <>
-                    {" "}
-                    {content.citations.map((c, i) => (
-                      <InlineCitation key={`${c.label}-${i}`}>
-                        <InlineCitationCard>
-                          <InlineCitationCardTrigger
-                            sources={[c.source_url ?? "#"]}
-                            aria-label={`Source: ${c.source_version}`}
-                          />
-                          <InlineCitationCardBody>
-                            <div className="p-2 text-[12px]">
-                              <div className="font-semibold">
-                                {c.source_version}
-                              </div>
-                              {c.source_url && (
-                                <a
-                                  href={c.source_url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="text-[#1d7a8c] hover:underline"
-                                >
-                                  View source
-                                </a>
-                              )}
-                            </div>
-                          </InlineCitationCardBody>
-                        </InlineCitationCard>
-                      </InlineCitation>
-                    ))}
-                  </>
-                )}
-              </p>
-            )}
-
-            {content.dose_card && <DoseCard {...content.dose_card} />}
-            {content.reassessment_card && (
-              <ReassessmentCard {...content.reassessment_card} />
-            )}
-            {content.refusal && (
-              <RefusalCard
-                kind={content.refusal.kind}
-                message={content.refusal.message}
-                next_action={content.refusal.next_action}
+          <div className="flex flex-col gap-2 px-3.5 py-3">
+            {message.parts.map((part, i) => (
+              <PartRenderer
+                key={`${message.id}-part-${i}`}
+                part={part}
+                onAskSubmit={onAskSubmit}
               />
-            )}
-            {content.ask_user && (
-              <AskUserForm
-                kind={content.ask_user.kind}
-                question={content.ask_user.question}
-                onSubmit={onAskSubmit}
-              />
-            )}
-
-            {/* T1 (design-review 2026-05-28 D4): technical-failure surface.
-                Red <Alert variant="destructive"> per D14 (red = technical;
-                amber = clinical safety abstention). Retry chip re-fires
-                the parent's last-message submission via the onRetry hook;
-                the failed user turn stays in the thread, only this
-                assistant error turn gets replaced by the new attempt. */}
-            {content.error && (
-              <Alert
-                variant="destructive"
-                data-testid="chat-error-alert"
-                aria-live="assertive"
-                className="mt-1"
-              >
-                <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-                <AlertTitle>{content.error.title}</AlertTitle>
-                <AlertDescription className="flex flex-col gap-2">
-                  <span>{content.error.body}</span>
-                  {content.error.onRetry && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={content.error.onRetry}
-                      className="self-start"
-                      data-testid="chat-error-retry"
-                    >
-                      Retry
-                    </Button>
-                  )}
-                </AlertDescription>
-              </Alert>
-            )}
+            ))}
           </div>
         </MessageContent>
       </article>
     </Message>
   );
+}
+
+// ─── Per-part renderer ─────────────────────────────────────────────────────
+
+function PartRenderer({
+  part,
+  onAskSubmit,
+}: {
+  part: UIMessagePart<UIDataTypes, UITools>;
+  onAskSubmit: (answer: string) => void;
+}) {
+  // Text part — render the prose verbatim
+  if (part.type === "text") {
+    const textPart = part as { type: "text"; text: string };
+    if (!textPart.text) return null;
+    return (
+      <p className="text-[13px] leading-[1.55] text-[#3a312b]">
+        {textPart.text}
+      </p>
+    );
+  }
+
+  // Tool parts — switch on the tool name (encoded in part.type as
+  // "tool-<toolName>"). We use the isToolUIPart guard (from `ai`) to
+  // narrow the type before reading toolName + state + output.
+  if (isToolUIPart(part)) {
+    const toolName = part.type.slice("tool-".length);
+    const state = part.state;
+    const output = (part as { output?: unknown }).output;
+
+    // While the tool call is being prepared by the model, show a subtle
+    // loading affordance. The card content is suppressed until the tool
+    // has returned a result.
+    if (state === "input-streaming" || state === "input-available") {
+      return (
+        <div
+          aria-label={`${toolName} is running`}
+          className="text-[11.5px] italic text-muted-foreground"
+        >
+          Running {toolName.replace(/_/g, " ")}…
+        </div>
+      );
+    }
+
+    if (state === "output-error") {
+      return (
+        <Alert
+          variant="destructive"
+          data-testid={`tool-error-${toolName}`}
+          className="text-[12px]"
+        >
+          <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+          <AlertTitle>{toolName} failed</AlertTitle>
+          <AlertDescription>
+            The tool encountered an error; the response continues without it.
+          </AlertDescription>
+        </Alert>
+      );
+    }
+
+    if (state !== "output-available") {
+      return null;
+    }
+
+    // Refusal-shaped output renders as RefusalCard regardless of which
+    // tool returned it. RefusalKind reasons are documented in
+    // tools/types.ts; we cast to AnyRefusalKind for the card prop.
+    if (isRefusalOutput(output)) {
+      const ref = output as { reason: string; message: string };
+      return (
+        <RefusalCard
+          kind={ref.reason as AnyRefusalKind}
+          message={ref.message}
+        />
+      );
+    }
+
+    // Tool-specific success renders
+    if (toolName === "calculate_dose") {
+      return <DoseCard {...(output as DoseCardProps)} />;
+    }
+
+    if (toolName === "get_reassessment_plan") {
+      return <ReassessmentCard {...(output as ReassessmentCardProps)} />;
+    }
+
+    if (toolName === "ask_user") {
+      // ask_user's tool output is a placeholder ({answer: ""}); the form
+      // collects the clinician's real answer and we send it back as the
+      // next user turn (server-side execute pattern, not addToolOutput
+      // round-trip). On submit the parent's onSubmit appends a user
+      // message with the answer text.
+      const askOutput = output as {
+        kind?: AskUserKind;
+        prompt?: string;
+        question?: string;
+      };
+      const kind = (askOutput.kind ?? "free_text") as AskUserKind;
+      const question =
+        askOutput.prompt ?? askOutput.question ?? "Please provide more info.";
+      return (
+        <AskUserForm kind={kind} question={question} onSubmit={onAskSubmit} />
+      );
+    }
+
+    if (toolName === "load_guideline") {
+      // Success case: nothing to render directly. The model uses the
+      // returned guideline payload to drive subsequent tool calls
+      // (calculate_dose + get_reassessment_plan); the clinician sees
+      // those cards, not the raw guideline.
+      return null;
+    }
+
+    // Unknown tool name — surface defensively
+    return (
+      <div
+        aria-label={`Tool ${toolName} returned a result`}
+        className="text-[11.5px] italic text-muted-foreground"
+      >
+        ({toolName} returned a result)
+      </div>
+    );
+  }
+
+  // Unknown part type — silently skip. Future part types (sources,
+  // reasoning, file etc.) can grow renderers here as needed.
+  return null;
 }
 
 // ─── Composer ──────────────────────────────────────────────────────────────
