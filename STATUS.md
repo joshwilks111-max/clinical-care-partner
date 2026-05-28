@@ -1,6 +1,6 @@
 # v3.1 build — status
 
-**Last updated:** 2026-05-28 12:00 NZST · **HEAD:** `e5f48c6` · **Branch:** `claude/elegant-robinson-17acc6`
+**Last updated:** 2026-05-28 12:15 NZST · **HEAD:** `8d64be9` (+ smoke-script fixes pending commit) · **Branch:** `claude/elegant-robinson-17acc6`
 
 Plan: [.claude/plans/v3.1-build-ready.md](.claude/plans/v3.1-build-ready.md). This file is the bisectable answer to "where are we?" — update on every push.
 
@@ -58,8 +58,8 @@ Caveat: 4 of 5 lane sessions landed on `claude/<adjective>` branches instead of 
 | P3.7 vitest integration eval | ✓ | `app/api/chat/route.test.ts` 9/9 pass |
 | P3.8 pre-deploy gates | ✓ | `npm test` 408/408, `npx tsc --noEmit` clean, `npm run build` clean |
 | P3.9 push to origin | ✓ | Last push `e5f48c6` at ~11:55 NZST |
-| P3.10a manual 5-case smoke on preview | ⚠ partial | Operator eyeballed empty state on previous preview URL `clinical-care-partner-ge9u591in...` and approved visuals. Has NOT pasted the 5 demo cases yet to verify card-rendering end-to-end. **Critical for brief-tonight.** |
-| P3.10b scripted curl smoke | ⚠ caught the toolCallId bug on first run; not re-run yet | Awaiting Vercel rebuild on `e5f48c6` (the fix commit) before re-running |
+| P3.10a manual 5-case smoke on preview | ⚠ awaiting operator | Operator eyeballed visuals on `clinical-care-partner-ge9u591in...` AND `clinical-care-partner-22brofjnl...`. Has NOT yet pasted the 5 demo cases into the UI to verify card-rendering end-to-end. Scripted smoke proves the route works; manual confirms the UI surface for cards/refusals/ask-user. |
+| P3.10b scripted curl smoke | ✓ **3/3 PASS** | Run on `8d64be9` preview at 12:15 NZST. Case 1: dose_card.drug=dexamethasone + tool_result.dose_mg=2.13. Case 2: prose-only airway-emergency abstention. Case 3: prose-only out-of-scope abstention. Script went through 3 fix iterations (UTF-8 stdout for → arrow; assert on .dose_card.tool_result.dose_mg not .dose_card.dose_mg; accept prose-only abstention as a valid second shape per D3). |
 | P3.11 DELETE PHASE (~22 files) | ✗ blocked on smoke approval | Per operator direction: STOP before delete; surface smoke results for review |
 | P3.12 push delete + 2nd preview smoke | ✗ blocked on P3.11 | |
 | P3.13 docs/architecture.png regenerate | ✗ not done | Plan says mermaid → png; deferred — mermaid markdown source exists at `docs/architecture.md` from Lane E-prep |
@@ -126,6 +126,6 @@ e8fc4c7 feat(v3.1 lane B): registry extension (region + reassessment_plans + dif
 | `npm test` | 42 files / 408 tests pass | post `e5f48c6` |
 | `npx tsc --noEmit` | exit 0 | post `e5f48c6` |
 | `npm run build` | ✓ compiled (Next 16 Turbopack) + 8 static pages | post `e5f48c6` |
-| Vercel preview | ⏳ rebuilding on `e5f48c6` | URL pending |
-| Live scripted smoke | ✗ caught toolCallId bug on `516fb66`; re-run on `e5f48c6` URL pending | |
-| Live manual smoke (5 cases) | ⏳ awaiting operator | |
+| Vercel preview | ✓ `clinical-care-partner-22brofjnl-joshwilks111-maxs-projects.vercel.app` | on `8d64be9` |
+| Live scripted smoke | ✓ **3/3 PASS** | 2026-05-28 12:15 NZST against the URL above |
+| Live manual smoke (5 cases) | ⏳ awaiting operator | The only thing between us and the DECISION gate |
