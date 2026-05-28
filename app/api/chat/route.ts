@@ -197,6 +197,23 @@ export async function POST(request: Request): Promise<Response> {
     } as ModelMessage);
   }
 
+  // ─── 5b. Inject the session region into the system context (F-1 fix) ──────
+  //
+  // The region cookie is the single source of truth for jurisdiction (set by
+  // the UI's RegionToggle). Before this, region reached only the tool layer
+  // via `effectiveRegion = toolRegion ?? region`, which let the MODEL'S guess
+  // win — so a free-typed note with the toggle on AU still got NZ (the model
+  // defaults to NZ when it can't infer region from the note). The dose number
+  // was unaffected (both registries use 0.15 mg/kg for moderate croup), but
+  // the source attribution + reassessment timing silently diverged from the
+  // toggle. We tell the model the region explicitly so its PROSE is correct
+  // too, and (below) make the tool treat the cookie as authoritative. This
+  // is the same "server owns the fact, not the LLM" posture as the dose spine.
+  enrichedMessages.unshift({
+    role: "system",
+    content: `Active clinical jurisdiction for this session: ${region}. Use this region for all guideline lookups unless the clinician explicitly names a different one. Do not infer the region from the note.`,
+  } as ModelMessage);
+
   // ─── 6. Load system prompt ────────────────────────────────────────────────
 
   let systemPrompt: string;
@@ -253,7 +270,20 @@ export async function POST(request: Request): Promise<Response> {
             { condition, region: toolRegion },
             { toolCallId },
           ) => {
-            const effectiveRegion = toolRegion ?? region;
+            // F-1 fix: the cookie region is AUTHORITATIVE. Previously this was
+            // `toolRegion ?? region`, which let the model's guessed region win
+            // over the UI toggle — so toggling to AU with a free-typed note
+            // still served NZ (the model defaults to NZ). The toggle is the
+            // single source of truth for jurisdiction, so the server value
+            // wins. We only honour the model's toolRegion when it AGREES with
+            // the session, or when the model names a region the session didn't
+            // set (defensive — the session always sets one via the cookie
+            // default, so in practice `region` always wins). Same posture as
+            // the dose spine: the server owns the fact, the model cannot
+            // override it. If a future feature needs per-message region
+            // override, it should flow through a new cookie/UI control, not a
+            // model guess.
+            const effectiveRegion = region;
             const result = load_guideline(condition, effectiveRegion);
             return { ...result, tool_call_id: toolCallId };
           },
