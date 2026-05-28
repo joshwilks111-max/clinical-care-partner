@@ -239,7 +239,12 @@ export function Console() {
     <>
       <div
         data-testid="heidi-grammar-shell"
-        className="heidi-shell grid h-screen w-full grid-cols-[220px_minmax(0,1fr)_minmax(33vw,42vw)]"
+        // Desktop-only by design. The narrow-viewport toggle is expressed as
+        // Tailwind responsive utilities (same cascade layer as `grid`), NOT a
+        // raw globals.css rule — an earlier .bluey-shell/.heidi-shell global
+        // selector silently failed to compile, so the shell never hid below
+        // 1100px. max-[1099px]:hidden is build-deterministic.
+        className="heidi-shell grid h-screen w-full grid-cols-[220px_minmax(0,1fr)_minmax(33vw,42vw)] max-[1099px]:hidden"
       >
         <SessionRail
           activeSessionId={activeSessionId ?? undefined}
@@ -271,12 +276,12 @@ export function Console() {
         />
       </div>
 
-      {/* Narrow-viewport banner — preserved from the prior shell. CSS-only
-          so no hydration risk. Shell above is hidden in CSS at <1024px;
-          this banner is hidden ≥1024px. */}
+      {/* Narrow-viewport banner — the inverse toggle of the shell above.
+          Hidden ≥1100px, shown (flex) below, via Tailwind responsive utilities
+          (no globals.css rule). No JS matchMedia, so no hydration mismatch. */}
       <div
         data-testid="narrow-viewport-banner"
-        className="narrow-viewport-banner hidden h-screen items-center justify-center bg-background px-6 text-center"
+        className="narrow-viewport-banner hidden h-screen items-center justify-center bg-background px-6 text-center max-[1099px]:flex"
       >
         <div className="max-w-sm">
           <h1 className="text-[18px] font-semibold text-foreground">

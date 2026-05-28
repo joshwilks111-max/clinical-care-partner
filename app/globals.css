@@ -203,16 +203,7 @@
   background: linear-gradient(180deg, #f4faff 0%, #e8f1f7 100%);
 }
 
-/* Bluey 3-column shell — narrow-viewport toggle (eng-review lock #7).
-   CSS-only swap, no JS matchMedia listener (avoids hydration mismatch).
-   - ≥ 1100px : the 3-column shell renders, the banner is hidden.
-   - < 1100px : the shell is hidden, the "open on a larger screen" banner shows.
-   Demo is desktop-only by design — the 3-column reading-grammar IS the product. */
-@media (max-width: 1099px) {
-  .bluey-shell {
-    display: none !important;
-  }
-  .narrow-viewport-banner {
-    display: flex !important;
-  }
-}
+/* Narrow-viewport toggle moved to Tailwind responsive utilities on the
+   elements themselves (console.tsx: shell `max-[1099px]:hidden`, banner
+   `max-[1099px]:flex`). A raw global rule here was silently dropped by the
+   Tailwind v4 build and never hid the shell — utilities are deterministic. */
