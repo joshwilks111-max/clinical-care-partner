@@ -58,6 +58,7 @@ import {
   type ReassessmentCardProps,
 } from "./reassessment-card";
 import { RefusalCard } from "./refusal-card";
+import { renderInlineMarkdown } from "./markdown";
 import { AskUserForm, type AskUserKind } from "./ask-user-form";
 import { RegionToggle } from "./region-toggle";
 import type { AnyRefusalKind } from "@/tools/types";
@@ -490,13 +491,14 @@ function PartRenderer({
   part: UIMessagePart<UIDataTypes, UITools>;
   onAskSubmit: (answer: string) => void;
 }) {
-  // Text part — render the prose verbatim
+  // Text part — render the prose with inline markdown (bold/italic/code only).
+  // renderInlineMarkdown is safe for untrusted input: no links, no raw HTML.
   if (part.type === "text") {
     const textPart = part as { type: "text"; text: string };
     if (!textPart.text) return null;
     return (
       <p className="text-[13px] leading-[1.55] text-[#3a312b]">
-        {textPart.text}
+        {renderInlineMarkdown(textPart.text)}
       </p>
     );
   }
