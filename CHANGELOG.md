@@ -33,6 +33,16 @@ respond. The Care Partner column is wider. The dead Promptfoo harness is gone.
   vitest, including `skills/dose-calculator/contract.test.ts` and its `cases.jsonl` fixture
   (untouched).
 
+### Fixed
+- The rail no longer overflows the viewport with 16 rows — the list scrolls within the rail
+  instead of pushing the later cases off-screen.
+- The narrow-viewport banner now actually hides the desktop console below 1100px (the toggle
+  had silently broken after a class rename) and its copy matches the breakpoint.
+- Eval-case labels no longer leak into the patient header — the header reads the patient from
+  the note, not the eval label. Rail muted text meets AA contrast on the cream surface.
+- Loading a case mid-stream aborts the in-flight response first, so the previous answer can no
+  longer bleed into the newly loaded case.
+
 ## [1.5.0.0] - 2026-05-28
 
 A submission landing page is now the front door. The live console moved to `/demo`.
