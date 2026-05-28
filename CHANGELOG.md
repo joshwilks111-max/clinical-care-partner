@@ -3,6 +3,23 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use `MAJOR.MINOR.PATCH.MICRO`.
 
+## [1.4.1.0] - 2026-05-28
+
+Post-ship polish. Two correctness fixes, no change to the deterministic dose spine.
+
+### Fixed
+- Assistant prose now renders inline markdown. The Care Partner's qualitative reply showed
+  `**moderate**` and `` `code` `` as literal asterisks and backticks; it now renders bold,
+  italic, and inline code. A small inline renderer (`app/console/markdown.tsx`) handles only
+  those three constructs — no links and no raw HTML, so the untrusted clinical note can never
+  become an active link or injected markup.
+- Reconciled the refusal-reason attribution in the dose-calculator skill prompt. The skill's
+  third safety invariant claimed `calculate_dose` returns all seven refusal reasons; it returns
+  four. The prompt now attributes each reason to its true source — `calculate_dose` (four
+  input-validation reasons), `load_guideline` (`out_of_scope`, `region_unknown`), and the
+  model's own prose abstention (`airway_emergency`, `unresolved_dangers`) — so abstention
+  routing matches what the tools can actually produce.
+
 ## [1.4.0.0] - 2026-05-28
 
 The v3.1 surgical rewrite. The whole interaction now runs through a single chat route on the Vercel
