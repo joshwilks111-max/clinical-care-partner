@@ -28,45 +28,16 @@ export default defineConfig({
       ".claude/**",
       ".codex-worktrees/**",
       ".cursor/**",
-      // v3.1 transitional excludes — these legacy lib modules are anaphylaxis-aware
-      // and break after Lane B cleanly removed the anaphylaxis guideline from
-      // registry/guidelines.ts. They are slated for deletion at Phase 3 step 11
-      // (the deploy-before-delete cleanup), but until then they live in trunk so
-      // app/api/turn1{,.5,2}/route.ts still compiles for the preview deploy. Drop
-      // these two excludes when step 11 lands.
-      "lib/completeness.test.ts",
-      "lib/router.test.ts",
-      "prompts/turn1.test.ts",
-      "prompts/turn1.5.test.ts",
-      "prompts/turn2.test.ts",
-      // Legacy console UI tests — coupled to the turn1/turn1.5/turn2 console
-      // state machine that P3.5 replaces with the Heidi-grammar 3-column shell
-      // + ChatPanel. These tests:
-      //   - console.test.tsx              asserts "no chat composer exists" (negated by v3.1)
-      //   - bluey-shell.regression.test.tsx  pins old grid widths + Bluey heeler branding
-      //   - safety-check-card.test.tsx     drives the test by clicking legacy [data-demo-id]
-      //                                    buttons on <Console />; once Console is rewritten,
-      //                                    the driver breaks even though safety-check-card.tsx
-      //                                    itself survives. Rewrite this test against the new
-      //                                    Console after P3.5 (or scope to safety-check-card
-      //                                    component in isolation).
-      // All three are slated for delete (console + bluey + their fixtures) or rewrite
-      // (safety-check-card) after Phase 3 step 11. Drop these excludes then.
-      "app/console/console.test.tsx",
-      "app/console/bluey-shell.regression.test.tsx",
-      "app/console/safety-check-card.test.tsx",
-      // P3-SDK rewrite — useChat + typed tool parts replace the custom
-      // postChat + X-Validated-Response header + fence-parsing validator
-      // architecture. Tests in these files assert on shapes (ChatMessage
-      // union, AssistantContent.dose_card, X-Validated-Response header,
-      // onFinish callback, fence-emitted-card Zod schemas) that no longer
-      // exist after the rewrite. Re-add unit-test coverage against the
-      // new UIMessage / part.type discriminator shapes in a follow-up;
-      // until then the live curl smoke + real-Chrome verify are the gates.
-      "app/api/chat/route.test.ts",
+      // chat-panel.test.tsx is the one v3.0 test whose SUBJECT survived the
+      // step-11 cleanup: it tests the live <ChatPanel>, but its assertions
+      // still target the old ChatMessage-union / X-Validated-Response shapes
+      // rather than the v3.1 UIMessage part.type discriminator. Rewriting it
+      // against the new shape is a tracked follow-up (TODOS.md); until then it
+      // stays excluded and the live demo smoke + real-Chrome verify are the
+      // gates for the v3.1 chat surface. (The other legacy console-UI tests —
+      // console/bluey-shell/safety-check-card/turn1-view/turn2-view/etc. — were
+      // deleted with their dead v3.0 source in this commit.)
       "app/console/chat-panel.test.tsx",
-      "lib/response-validator.test.ts",
-      "skills/dose-calculator/contract.test.ts",
     ],
   },
 });

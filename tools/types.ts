@@ -7,12 +7,7 @@
 // don't re-author except by a fresh planning pass.
 //
 // ─── What lives here ───────────────────────────────────────────────────────
-// 1. Re-exports of the SKILL's emitted-block schemas (DoseCardEmittedSchema,
-//    ReassessmentCardEmittedSchema) so the harness validator (Lane C) and the
-//    UI cards (Lane F) hit the SAME Zod object the skill validates against.
-//    Single source of truth, no drift; the skill workspace is the authority.
-//
-// 2. The four RefusalKind unions — the closed sets every refusal-emitting
+// The four RefusalKind unions — the closed sets every refusal-emitting
 //    tool MUST pick from. Per D3 (split refusal surface, ceo-review 2026-05-28):
 //      - calculate_dose             → CalculateDoseRefusalKind          (4 vals)
 //      - load_guideline             → LoadGuidelineRefusalKind          (2 vals)
@@ -32,19 +27,7 @@
 
 import { z } from "zod";
 
-// ─── 1. Re-export the skill's emitted-block schemas ───────────────────────
-// Lane C's response-validator imports these to validate the fenced JSON
-// blocks the model emits. Lane F's dose-card / reassessment-card components
-// derive their props from the inferred types. Authoritative source: the
-// skill workspace's validate_dose_card.ts.
-export {
-  DoseCardEmittedSchema,
-  ReassessmentCardEmittedSchema,
-  type DoseCardEmitted,
-  type ReassessmentCardEmitted,
-} from "@skills/dose-calculator/scripts/validate_dose_card";
-
-// ─── 2a. calculate_dose refusal kinds (4 values, harness contract) ────────
+// ─── 1a. calculate_dose refusal kinds (4 values, harness contract) ────────
 // Mirrors the four reasons the deterministic dose tool can return today
 // (see tools/calculate_dose.ts → RefusalReason). Each one corresponds to
 // a guard the tool enforces; adding a new kind requires a matching guard
@@ -57,7 +40,7 @@ export const CalculateDoseRefusalKind = z.enum([
 ]);
 export type CalculateDoseRefusalKind = z.infer<typeof CalculateDoseRefusalKind>;
 
-// ─── 2b. load_guideline refusal kinds (2 values, retrieval-side) ──────────
+// ─── 1b. load_guideline refusal kinds (2 values, retrieval-side) ──────────
 // Per D3: "no guideline" is a retrieval concern, not a clinical-judgment
 // abstention. The clinical-judgment abstention ("differential too wide")
 // lives on the SKILL side as SkillDirectRefusalKind.
@@ -67,7 +50,7 @@ export const LoadGuidelineRefusalKind = z.enum([
 ]);
 export type LoadGuidelineRefusalKind = z.infer<typeof LoadGuidelineRefusalKind>;
 
-// ─── 2c. get_reassessment_plan refusal kinds (6 values, per HARNESS-BRIEF) ┐
+// ─── 1c. get_reassessment_plan refusal kinds (6 values, per HARNESS-BRIEF) ┐
 // Source: skills/dose-calculator/HARNESS-BRIEF-get_reassessment_plan.md     │
 // (the "if not found / freshness check / no plan modelled" spec at lines   │
 // 188-199). A reassessment plan can legitimately be "not required" for a   │
@@ -85,7 +68,7 @@ export type GetReassessmentPlanRefusalKind = z.infer<
   typeof GetReassessmentPlanRefusalKind
 >;
 
-// ─── 2d. Skill-direct refusal kinds (1 value, model-side prose abstention) ─
+// ─── 1d. Skill-direct refusal kinds (1 value, model-side prose abstention) ─
 // Per D3: when the model judges the differential is too wide to safely pick
 // a guideline, it abstains in PROSE — no tool call, no dose-card. The lane-C
 // validator surfaces this as a refusal-card with this single kind. Adding
@@ -94,7 +77,7 @@ export type GetReassessmentPlanRefusalKind = z.infer<
 export const SkillDirectRefusalKind = z.enum(["unresolved_dangers"]);
 export type SkillDirectRefusalKind = z.infer<typeof SkillDirectRefusalKind>;
 
-// ─── 3. The unified refusal-kind union (for UI dispatch) ──────────────────
+// ─── 2. The unified refusal-kind union (for UI dispatch) ──────────────────
 // Lane F's refusal-card component switches on this discriminator to pick
 // which copy + which "what to do next" hint to render. Exhaustive switches
 // against this union will fail the typecheck if a new kind ever lands in

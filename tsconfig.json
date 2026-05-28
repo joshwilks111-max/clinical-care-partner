@@ -33,7 +33,6 @@
   ],
   "exclude": [
     "node_modules",
-    "app/console/chat-panel.test.tsx",
-    "app/api/chat/route.test.ts"
+    "app/console/chat-panel.test.tsx"
   ]
 }
