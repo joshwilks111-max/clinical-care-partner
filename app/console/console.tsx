@@ -1,231 +1,277 @@
 // app/console/console.tsx
 //
-// The 3-column Bluey shell — state owner only (eng-review lock #3).
+// The v3.1 Heidi-grammar 3-column console — state owner only.
 //
-// Console owns: note, draft, turn1, turn2, weightConfirmed, busy, and the new
-// activeDemoId (lock #9). It composes three presentational children:
+// Console composes three Lane F presentational children. The chat thread
+// state + transport is owned by the Vercel AI SDK's useChat hook (parses
+// the canonical UI-message-stream wire format the route returns); the
+// other state slots (centre note, active session, patient header) stay
+// here because they're UI-only and not part of the chat protocol.
 //
-//   <Rail>            — brand block + paste textarea + 6 demo cases.
-//   <CaseCanvas>      — CasePanel + turn1 + turn1.5 + decision gate.
-//   <EvidencePanel>   — turn2 result (or empty state).
+//   <SessionRail>  (LEFT, 220px)  — 5 demo cases, click → load note + reset chat
+//   <NotePane>     (CENTRE, 1fr)  — note textarea + extracted-facts accordion
+//   <ChatPanel>    (RIGHT, 520px) — thread + composer + suggested prompts
 //
-// Below the 1100px breakpoint the grid collapses to a single-column banner
-// (lock #7, CSS-only — no JS matchMedia, no hydration-mismatch risk).
+// State owned here:
+//   - note: string                       — the centre-pane note content
+//   - activeSessionId: string | null     — for the SessionRail active-row styling
+//   - patientName / patientSubLine       — for NotePane patient header
+//   - seededFirstMessageId               — id of the seeded centre-note user
+//                                          message; chat-panel filters it from
+//                                          the rendered thread (visible in
+//                                          centre column already, would
+//                                          duplicate in chat)
+// State owned by useChat:
+//   - messages: UIMessage[]              — full thread, parts[]-shaped
+//   - status: ChatStatus                 — submitted | streaming | ready | error
+//   - error: Error | undefined           — for the destructive Alert + Retry
 //
-// Clinical behaviour is unchanged from pre-Bluey: same /api/turn1, /api/turn1.5,
-// /api/turn2 calls; same CaseState contract; same gateOpen invariant; same
-// scroll-into-view on turn-1.5/turn-2 status transitions.
+// Transport: useChat parses the SDK's UI-message-stream natively. Each tool
+// call from the route surfaces as a UIMessagePart with type "tool-<toolName>"
+// and progressive state; chat-panel's AssistantBubble switches on part.type
+// to render DoseCard / ReassessmentCard / RefusalCard / AskUserForm.
+//
+// Region: NOT owned here — RegionToggle is self-contained (reads + writes
+// the `care-partner-region` cookie itself; reloads on change). Lane C's
+// lib/region.ts is the cookie contract.
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useChat } from "@ai-sdk/react";
+import {
+  DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithToolCalls,
+  type UIMessage,
+} from "ai";
 
-import { Rail } from "./rail";
-import { CaseCanvas } from "./case-canvas";
-import { EvidencePanel } from "./evidence-panel";
-import type { Turn1Response, Turn1Success } from "./fixtures";
-import type { Turn2Response } from "@/app/api/turn2/route";
-import type { CaseState } from "@/lib/case-state";
-import { getGuideline } from "@/registry/guidelines";
-import { gateOpen, useTurn15Flow } from "./use-turn15-flow";
-import type { Phase } from "./phase-loader";
+import { ChatPanel } from "./chat-panel";
+import { NotePane, type ExtractedFacts } from "./note-pane";
+import { SessionRail, type DemoSession } from "./session-rail";
 
-type Busy =
-  | { kind: "turn1" }
-  | { kind: "turn15"; phase: Phase }
-  | { kind: "turn2"; phase: Phase }
-  | null;
+// ─── ID generator for the seeded centre-note user message ────────────────────
+// useChat generates ids natively for messages it creates (via sendMessage);
+// we only need our own generator for the ONE seeded message we hand it via
+// setMessages. Keep it simple — uniqueness within the session is enough.
+
+let _idCounter = 0;
+function nextMessageId(): string {
+  _idCounter += 1;
+  return `seed-${Date.now().toString(36)}-${_idCounter}`;
+}
 
 export function Console() {
+  // ─── Local state (UI-only, not part of the chat protocol) ─────────────────
+
   const [note, setNote] = useState("");
-  const [draft, setDraft] = useState("");
-  const [turn1, setTurn1] = useState<Turn1Response | null>(null);
-  const [weightConfirmed, setWeightConfirmed] = useState(false);
-  const [turn2, setTurn2] = useState<Turn2Response | null>(null);
-  const [busy, setBusy] = useState<Busy>(null);
-  // activeDemoId — eng-review lock #9. Set on demo-button click; clear on
-  // paste-run. Drives the rail item's aria-current="true" highlight.
-  const [activeDemoId, setActiveDemoId] = useState<string | null>(null);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  // T6 (qa-report 2026-05-28): NotePane patient header.
+  // Parsed out of session.name on demo-row click (e.g. "Jack T · croup (NZ)"
+  // → name "Jack T", sub "croup (NZ)"). When undefined, NotePane shows the
+  // empty-state FilePlus avatar.
+  const [patientName, setPatientName] = useState<string | undefined>(undefined);
+  const [patientSubLine, setPatientSubLine] = useState<string | undefined>(
+    undefined,
+  );
+  // The id of the seeded centre-note user message (if any). ChatPanel
+  // filters this id out of the rendered thread so the seeded patient
+  // context doesn't appear as a duplicate user bubble (it's already
+  // visible in the centre column).
+  const [seededFirstMessageId, setSeededFirstMessageId] = useState<
+    string | undefined
+  >(undefined);
 
-  const turn1Ok: Turn1Success | null = turn1?.status === "ok" ? turn1 : null;
+  // ─── useChat — the SDK owns thread state + transport ─────────────────────
+  //
+  // Per @ai-sdk/react/dist/index.d.ts:39: useChat returns helpers including
+  // messages, sendMessage, status, error, setMessages, regenerate. We pass
+  // a DefaultChatTransport pointing at our /api/chat route and the
+  // lastAssistantMessageIsCompleteWithToolCalls helper for
+  // sendAutomaticallyWhen so the loop continues after each tool result
+  // until the model gives a final text turn.
+  //
+  // The transport is memoised so we don't construct a new one on every
+  // render (would tear down + recreate the chat session).
 
-  function mergeCaseState(updated: CaseState) {
-    setTurn1((prev) =>
-      prev?.status === "ok" ? { ...prev, caseState: updated } : prev,
-    );
-  }
+  const transport = useMemo(
+    () => new DefaultChatTransport({ api: "/api/chat" }),
+    [],
+  );
 
+  // `stop` is required for any caller of setMessages — see the "+ New chat"
+  // race fix below. Without it, clicking New chat mid-stream clears the
+  // messages array but the transport keeps writing deltas onto the empty
+  // array, so the thread "un-clears" as the rest of the assistant turn
+  // lands. stop() aborts the in-flight request and is a no-op if nothing
+  // is streaming.
   const {
-    turn15,
-    pendingAsk,
-    recommendedGuidelineId,
-    turn15Busy,
-    resetTurn15,
-    runDecide: runTurn15Decide,
-    runAnswer: runTurn15Answer,
-  } = useTurn15Flow(turn1Ok, mergeCaseState);
-
-  const activeStateRef = useRef<HTMLDivElement | null>(null);
-  const turn15Code = turn15?.status ?? null;
-  const turn2Code = turn2?.status ?? null;
-  useEffect(() => {
-    if (turn15Code === null && turn2Code === null) return;
-    const el = activeStateRef.current;
-    if (el && typeof el.scrollIntoView === "function") {
-      el.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  }, [turn15Code, turn2Code]);
-
-  const turn15InFlight = turn15Busy !== null;
-  const guidelineGateOpen = gateOpen({
-    turn1Ok,
-    weightConfirmed,
-    turn15Busy,
+    messages,
+    sendMessage,
+    status,
+    error,
+    setMessages,
+    regenerate,
+    stop,
+  } = useChat({
+    transport,
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
   });
 
-  // anyBusy — true while ANY turn is in flight. Wired into the rail's
-  // disabled-during-work guard (the existing console used busy !== null ||
-  // turn15Busy !== null inline).
-  const anyBusy = busy !== null || turn15InFlight;
+  const isStreaming = status === "streaming" || status === "submitted";
 
-  async function runTurn1(rawNote: string) {
-    const trimmed = rawNote.trim();
-    if (trimmed.length === 0) return;
-    setNote(trimmed);
-    setTurn1(null);
-    resetTurn15();
-    setTurn2(null);
-    setWeightConfirmed(false);
-    setBusy({ kind: "turn1" });
-    try {
-      const res = await fetch("/api/turn1", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ note: trimmed }),
-      });
-      const data = (await res.json()) as Turn1Response;
-      setTurn1(data);
-    } catch (e) {
-      setTurn1({
-        status: "error",
-        message:
-          "Could not reach the turn-1 endpoint. " +
-          (e instanceof Error ? e.message : String(e)),
-      });
-    } finally {
-      setBusy(null);
+  // ─── Derive originalNote chip from the seeded message (D13) ──────────────
+  //
+  // The composer chip is the patient pin — shows "Jack T · croup (NZ)" or
+  // similar. v1 derives it from patientName + patientSubLine; if those are
+  // absent (clinician pasted into the centre directly without a demo),
+  // fall back to the first line of `note`.
+
+  const originalNote = useMemo(() => {
+    if (patientName) {
+      return {
+        primary: patientName,
+        secondary: patientSubLine,
+      };
     }
-  }
-
-  function onRunPaste(rawNote: string) {
-    // Paste-run is the "I'm not running a known demo" path — clear the
-    // active highlight so no rail row stays selected against a different note.
-    setActiveDemoId(null);
-    void runTurn1(rawNote);
-  }
-
-  function onRunDemo(id: string, demoNote: string) {
-    setActiveDemoId(id);
-    void runTurn1(demoNote);
-  }
-
-  function onConfirmWeight() {
-    setWeightConfirmed(true);
-    void runTurn15Decide(turn1Ok?.confidence ?? "medium");
-  }
-
-  function runTurn2(guidelineId: string, condition: string) {
-    if (!turn1Ok) return;
-    const caseState: CaseState = {
-      ...turn1Ok.caseState,
-      selected_condition: condition,
-      selected_guideline_id: guidelineId,
-      selected_severity: turn1Ok.extractedFacts.severity,
-    };
-    runTurn2WithCaseState(guidelineId, caseState);
-  }
-
-  async function runTurn2WithCaseState(
-    guidelineId: string,
-    incoming: CaseState,
-  ) {
-    const caseState: CaseState = {
-      ...incoming,
-      selected_guideline_id: incoming.selected_guideline_id ?? guidelineId,
-      selected_severity:
-        incoming.selected_severity ?? turn1Ok?.extractedFacts.severity ?? null,
-      selected_condition:
-        incoming.selected_condition ??
-        getGuideline(guidelineId)?.condition ??
-        null,
-    };
-
-    setTurn2(null);
-    setBusy({ kind: "turn2", phase: "retrieving-guideline" });
-    try {
-      const res = await fetch("/api/turn2", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ caseState }),
-      });
-      setBusy({ kind: "turn2", phase: "checking-completeness" });
-      const data = (await res.json()) as Turn2Response;
-      setTurn2(data);
-    } catch (e) {
-      setTurn2({
-        status: "error",
-        message:
-          "Could not reach the turn-2 endpoint. " +
-          (e instanceof Error ? e.message : String(e)),
-      });
-    } finally {
-      setBusy(null);
+    if (note.trim()) {
+      const firstLine = note.split("\n")[0]?.trim() ?? "";
+      const primary =
+        firstLine.length > 60 ? firstLine.slice(0, 57) + "…" : firstLine;
+      return primary ? { primary } : undefined;
     }
-  }
+    return undefined;
+  }, [patientName, patientSubLine, note]);
 
-  const turn2Phase: Phase | null = busy?.kind === "turn2" ? busy.phase : null;
+  // ─── Handlers ────────────────────────────────────────────────────────────
+
+  const onChatSubmit = useCallback(
+    async (text: string) => {
+      // ISSUE-001 fix lives here now via the seeded-first-message pattern:
+      // when a centre note is loaded AND there are no messages yet, seed
+      // the note as the first user message BEFORE the user-typed text so
+      // the route's firstUserContent() pinning sees the patient note as
+      // the originalNote. The seeded message is filtered out of the chat
+      // panel's rendered thread (it lives in the centre column).
+      //
+      // If messages already exist OR there's no note, just sendMessage
+      // directly. The SDK appends a user turn and POSTs.
+      if (messages.length === 0 && note.trim()) {
+        const seedId = nextMessageId();
+        const seeded: UIMessage = {
+          id: seedId,
+          role: "user",
+          parts: [{ type: "text", text: note.trim() }],
+        };
+        setMessages([seeded]);
+        setSeededFirstMessageId(seedId);
+      }
+      await sendMessage({ text });
+    },
+    [messages.length, note, sendMessage, setMessages],
+  );
+
+  const onNewChat = useCallback(() => {
+    // Abort the in-flight stream BEFORE clearing the array — otherwise the
+    // transport keeps writing deltas onto the cleared messages[] and the
+    // thread visibly un-clears as the stream completes. Safe when idle
+    // (no-op). chat-panel.tsx also gates the trigger control with
+    // disabled={isStreaming} as defence in depth.
+    stop();
+    setMessages([]);
+    setNote("");
+    setActiveSessionId(null);
+    setPatientName(undefined);
+    setPatientSubLine(undefined);
+    setSeededFirstMessageId(undefined);
+  }, [setMessages, stop]);
+
+  const onLoadCase = useCallback(
+    (session: DemoSession) => {
+      // Demo-row click: load the note into the centre pane, reset the chat
+      // thread, mark the rail row active. The clinician then clicks
+      // submit on the chat composer (or types follow-up) to actually fire
+      // a request — we deliberately don't auto-submit so the demo can be
+      // edited first.
+      setNote(session.note);
+      setMessages([]);
+      setSeededFirstMessageId(undefined);
+      setActiveSessionId(session.id);
+
+      // Parse session.name (e.g. "Jack T · croup (NZ)" or "Mia R · ?epiglottitis")
+      // into a patient name + condition sub-line. The format is "<Name> · <rest>"
+      // — split on the first " · " separator. If no separator, the whole label
+      // is the name and the sub-line stays empty.
+      const sep = session.name.indexOf(" · ");
+      if (sep === -1) {
+        setPatientName(session.name);
+        setPatientSubLine(undefined);
+      } else {
+        setPatientName(session.name.slice(0, sep));
+        setPatientSubLine(session.name.slice(sep + 3));
+      }
+    },
+    [setMessages],
+  );
+
+  const onNewSession = useCallback(() => {
+    onNewChat();
+  }, [onNewChat]);
+
+  const onRetry = useCallback(() => {
+    void regenerate();
+  }, [regenerate]);
+
+  // For the v1 surface the note-pane is a typing surface — the
+  // ExtractedFacts payload is derived server-side in a future iteration.
+  // We leave it empty so the accordion shows the placeholder state.
+  const facts: ExtractedFacts | undefined = undefined;
+
+  // ─── Render — 3-column Heidi-grammar shell ───────────────────────────────
+  //
+  // Breakpoints per D4 (design-review 2026-05-28): 220/700/520 ≥1500px,
+  // 200/1fr/480 1180–1500px, 180/1fr/420 1024–1180px. Mobile <1024px
+  // deferred (TODO; see TODOS.md). The narrow-viewport banner from the
+  // old shell is preserved for ≤1024px users.
 
   return (
     <>
-      {/* The 3-column shell (eng-review lock #2, fixed widths 272 + 1fr + 392).
-          Tailwind v4 arbitrary value class so the widths are visible in the DOM
-          for the mandatory regression test. */}
       <div
-        data-testid="bluey-shell"
-        className="bluey-shell grid h-screen w-full grid-cols-[272px_1fr_392px]"
+        data-testid="heidi-grammar-shell"
+        className="heidi-shell grid h-screen w-full grid-cols-[220px_1fr_520px]"
       >
-        <Rail
-          draft={draft}
-          onDraftChange={setDraft}
-          onRun={onRunPaste}
-          onRunDemo={onRunDemo}
-          busy={anyBusy}
-          activeDemoId={activeDemoId}
+        <SessionRail
+          activeSessionId={activeSessionId ?? undefined}
+          onLoadCase={onLoadCase}
+          onNewSession={onNewSession}
         />
-        <CaseCanvas
+
+        <NotePane
           note={note}
-          turn1={turn1}
-          turn1Ok={turn1Ok}
-          facts={turn1Ok?.extractedFacts ?? null}
-          weightConfirmed={weightConfirmed}
-          onConfirmWeight={onConfirmWeight}
-          turn1Busy={busy?.kind === "turn1"}
-          turn2Busy={busy?.kind === "turn2"}
-          turn15={turn15}
-          turn15Busy={turn15InFlight}
-          pendingAsk={pendingAsk}
-          recommendedGuidelineId={recommendedGuidelineId}
-          guidelineGateOpen={guidelineGateOpen}
-          onAnswerTurn15={(a) => void runTurn15Answer(a)}
-          onSelectGuideline={runTurn2}
-          activeStateRef={activeStateRef}
+          onNoteChange={setNote}
+          patientName={patientName}
+          patientSubLine={patientSubLine}
+          facts={facts}
+          region="NZ"
         />
-        <EvidencePanel turn2={turn2} turn2Busy={turn2Phase} />
+
+        {/* T4 (design-review 2026-05-28 LS-2): RegionToggle lives inside
+            ChatPanel's footer (not floated here); single canonical region
+            toggle per the screenshot spec. */}
+        <ChatPanel
+          messages={messages}
+          onSubmit={onChatSubmit}
+          onNewChat={onNewChat}
+          isStreaming={isStreaming}
+          error={error}
+          onRetry={onRetry}
+          originalNote={originalNote}
+          seededFirstMessageId={seededFirstMessageId}
+        />
       </div>
 
-      {/* Narrow-viewport banner (eng-review lock #7). CSS-only — no JS
-          matchMedia listener, so no hydration-mismatch risk. The shell above
-          is hidden in CSS at <1100px; this banner is hidden ≥1100px. */}
+      {/* Narrow-viewport banner — preserved from the prior shell. CSS-only
+          so no hydration risk. Shell above is hidden in CSS at <1024px;
+          this banner is hidden ≥1024px. */}
       <div
         data-testid="narrow-viewport-banner"
         className="narrow-viewport-banner hidden h-screen items-center justify-center bg-background px-6 text-center"
@@ -235,8 +281,8 @@ export function Console() {
             This demo is built for desktop.
           </h1>
           <p className="mt-2 text-[13px] text-muted-foreground">
-            Open on a larger screen (≥ 1100px wide) to interact with the Bluey
-            clinical care partner.
+            Open on a larger screen (≥ 1024px wide) to interact with the care
+            partner.
           </p>
         </div>
       </div>

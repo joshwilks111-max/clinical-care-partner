@@ -1,4 +1,4 @@
-# research/papers.md — 4-paper cross-walk + citation reference card
+# research/papers.md — 6-paper cross-walk + citation reference card
 
 The WHY behind the architecture. Each entry below is a **verbatim line + location + caveat**.
 The caveats are deliberate: they are the senior signal — they say what each paper does *not*
@@ -16,7 +16,8 @@ LLM-judge metric, on a different model." We cite the line, then the leash.
 |---|---|---|---|
 | Completeness check (the omission guard) | 2510.02967 (NICE) | "faithful ≠ safe" — faithfulness can be near-perfect and still unsafe via omission | A specific faithfulness number for *our* model (different model, LLM-judge metric) |
 | No vector DB, no chunking | 2602.23368 (Amazon) | Retrieval can hit high attainment without a vector database | The abstract's ">90%" headline (cite the body line); not our primary reason (token budget is) |
-| Whole-document / lexical surfacing | 2605.15184 (PwC grep) | Lexical search surfaces verbatim strings without an embedding bottleneck | A blanket "lexical > vector" claim (vector wins 5/10 programmatic; inline-only result) |
+| Whole-document / lexical surfacing | 2605.15184 (Sen et al., *Is Grep All You Need?*) | Lexical search surfaces verbatim strings without an embedding bottleneck | A blanket "lexical > vector" claim (vector wins 5/10 programmatic; inline-only result) |
+| Typed registry over RAG for `load_guideline` (v3.1) | 2605.15184 (Sen et al.) | Inline tool results are reasoned over better by agent harnesses than vector hits across 4 harnesses tested | Anything about *programmatic* delivery (vector wins 5/10 there); the load-bearing reason is corpus size (one document — vector search is theatre) |
 | Large-corpus retrieval is the deferred path | 2605.05242 (DCI) | Agentic retrieval is the answer *at large corpus scale* | Anything about a 2-doc corpus (smallest tested = 50,220 docs) |
 | Deterministic dose tool (LLM never does math) | npj Digital Medicine | Tool-based calc = 5.5–13× fewer incorrect responses vs in-context arithmetic | (headline; the strongest single evidence line for the safety spine) |
 | Abstention-as-safety / investigate-before-abstain (whole thesis) | 2509.24816 (KnowGuard) | The *paradigm* — abstain on insufficient evidence; check knowledge boundaries against **external** medical evidence, not model self-assessment | Their *mechanism* (systematic knowledge-graph exploration over a large medical space) — that is our **deferred** large-corpus path, not the v1 whole-doc build |
@@ -51,15 +52,35 @@ the design still stands because the real reason never depended on them.
   choice; our actual reason is the **token budget** (a 2-document, ~800-token corpus needs no
   retrieval at all).
 
-### 2605.15184 — PwC (lexical / grep retrieval)
+### 2605.15184 — Sen et al. *Is Grep All You Need? How Agent Harnesses Reshape Agentic Search* (PwC)
+- **Full citation:** Sahil Sen, Akhil Kasturi, Elias Lumer, Anmol Gulati, Vamse Kumar Subbiah,
+  *Is Grep All You Need? How Agent Harnesses Reshape Agentic Search*, arXiv:2605.15184,
+  submitted 14 May 2026 (PricewaterhouseCoopers US).
+  Verified against arXiv 2026-05-28 (title + author list + date confirmed).
 - **Verbatim:** "With inline delivery, lexical search is uniformly stronger than dense retrieval …
   for every harness–model pair"
 - **Location:** Experiment 1.
+- **Experimental setup (for the citing reader):** 116-question sample from LongMemEval
+  fact-recovery tasks; four agent harnesses tested — a custom harness (**Chronos**) and three
+  provider-native CLIs (**Claude Code, Codex, Gemini CLI**); both inline tool results and
+  file-based tool results compared.
 - **Caveat:** This is the **inline-delivery** result only; in the **programmatic** setting **vector
   wins 5/10**, so this is NOT a blanket "lexical beats vector." Cite the **MECHANISM** — lexical
   search **surfaces verbatim strings without an embedding bottleneck** — which is exactly what
   verbatim guideline citation needs. Drop the paper's "noise" framing (irrelevant to a clean
   2-document corpus).
+
+- **Why this matters for v3.1 (`load_guideline` typed-registry choice):** the harness's
+  `load_guideline(condition, region)` tool delivers its result inline to the model — a single
+  structured JSON object with `severity_rows[]`, `dose_rules[]`, `differential_check[]`,
+  `source_version`, `source_url`. That is the **inline-delivery** regime where the paper's
+  inline-only finding is strongest. The skill reasons better over the typed registry result
+  (named fields, no surrounding noise to re-ground) than it would over a top-k vector hit of
+  guideline prose chunks. The corpus-size argument is the load-bearing reason for typed
+  registry over RAG (one document per region; vector search is theatre); this paper is the
+  **mechanism corroboration** for why the result generalises when the corpus grows beyond one
+  document but stays in the inline-delivery regime. See `DESIGN.md` §6 ("Why not RAG") for the
+  full architectural rationale.
 
 ### 2605.05242 — DCI (large-corpus document retrieval)
 - **Verbatim:** large-corpus retrieval result (smallest corpus tested = **50,220 documents**).

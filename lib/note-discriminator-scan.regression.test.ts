@@ -21,10 +21,18 @@
 //      where epiglottitis has positive_evidence — fires Rule 2
 //      (`unresolved_dangers`) and returns `action: "abstain"`. NO dose.
 //
-// This test exercises the seam at the Turn 1.5 override + decideCollapse
-// layers directly (the LLM is the only thing in the chain that decides to
-// put findings in positive_evidence — that's its job; the deterministic
-// spine downstream of it must refuse to dose past those positives).
+// This test exercises the deterministic spine directly: the note-discriminator
+// scanner and the decideCollapse gate (the LLM is the only thing in the chain
+// that decides to put findings in positive_evidence — that's its job; the
+// deterministic spine downstream of it must refuse to dose past those
+// positives).
+//
+// NOTE (v3.1 step 11): the original middle assertion exercised the legacy
+// Turn 1.5 override (shouldOverrideToNoQuestion from prompts/turn1.5). That
+// server-side state machine no longer exists — the SDK skill instructs the
+// model directly. The two surviving blocks are the load-bearing safety canary:
+// the scanner classification and the decideCollapse Rule-2 abstain, both of
+// which run against live, kept code.
 
 import { describe, it, expect } from "vitest";
 
@@ -34,10 +42,6 @@ import {
   type Grounding,
 } from "@/lib/note-discriminator-scan";
 import { decideCollapse, type ConditionGuidelineMap } from "@/lib/collapse";
-import {
-  shouldOverrideToNoQuestion,
-  type Turn15ModelOutput,
-} from "@/prompts/turn1.5";
 import {
   buildDiscriminatorSurfaceFormMap,
   buildConditionGuidelineMap,
@@ -66,51 +70,11 @@ describe("REGRESSION — discriminators PRESENT must still abstain", () => {
     expect(groundedAbsentFor(groundings, "epiglottitis")).toEqual([]);
   });
 
-  it("turn 1.5 override: does NOT fire when discriminators are positive (no false ok)", () => {
-    // Simulate the post-Turn-1 differential: epiglottitis has the
-    // discriminators in POSITIVE_evidence (the LLM correctly extracted
-    // them). negative_evidence is empty for this condition.
-    const positiveDiff: Differential = {
-      conditions: [
-        {
-          name: "Croup",
-          likelihood: "likely",
-          positive_evidence: ["barky cough", "stridor at rest"],
-          negative_evidence: [],
-        },
-        {
-          name: "Epiglottitis",
-          likelihood: "must-not-miss",
-          positive_evidence: ["drooling", "tripod posture", "muffled voice"],
-          negative_evidence: [],
-        },
-      ],
-      candidate_guidelines: [
-        { guideline_id: "starship-croup-2020", label: "Starship croup (NZ)" },
-      ],
-    };
-
-    const llmAsk: Turn15ModelOutput = {
-      needs_question: true,
-      target_condition: "Epiglottitis",
-      question: "Are drooling, tripod posture, or muffled voice present?",
-      recommended_condition: "Croup",
-      recommended_guideline: "starship-croup-2020",
-      rationale_summary: "Croup leads; epiglottitis must be ruled out.",
-    };
-
-    const override = shouldOverrideToNoQuestion(llmAsk, positiveDiff);
-    // Override does NOT fire — the registry discriminators are in POSITIVE,
-    // not negative. The question still gets asked (and Rule 2 in
-    // decideCollapse will then abstain regardless).
-    expect(override.kind).toBe("none");
-  });
-
-  it("turn 2 collapse gate: Rule 2 fires when epiglottitis has positive evidence", () => {
-    // Even if a malicious or buggy client somehow got past Turn 1.5, the
-    // Turn 2 collapse gate runs decideCollapse again as defence-in-depth.
-    // Rule 2 (any positive must-not-miss → abstain) is the load-bearing
-    // safety check. This test pins that it fires.
+  it("collapse gate: Rule 2 fires when epiglottitis has positive evidence", () => {
+    // The decideCollapse gate is the load-bearing safety check: any positive
+    // must-not-miss → abstain (Rule 2). It runs server-side regardless of how
+    // the differential was produced, so it's the deterministic backstop behind
+    // the model's judgment. This test pins that it fires.
     const positiveDiff: Differential = {
       conditions: [
         {
