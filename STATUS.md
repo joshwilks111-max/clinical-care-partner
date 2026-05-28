@@ -1,6 +1,6 @@
 # v3.1 build — status
 
-**Last updated:** 2026-05-28 12:15 NZST · **HEAD:** `8d64be9` (+ smoke-script fixes pending commit) · **Branch:** `claude/elegant-robinson-17acc6`
+**Last updated:** 2026-05-28 12:40 NZST · **HEAD:** `f4618b2` (ISSUE-001 + ISSUE-003 fixes pushed) · **Branch:** `claude/elegant-robinson-17acc6`
 
 Plan: [.claude/plans/v3.1-build-ready.md](.claude/plans/v3.1-build-ready.md). This file is the bisectable answer to "where are we?" — update on every push.
 
@@ -58,7 +58,9 @@ Caveat: 4 of 5 lane sessions landed on `claude/<adjective>` branches instead of 
 | P3.7 vitest integration eval | ✓ | `app/api/chat/route.test.ts` 9/9 pass |
 | P3.8 pre-deploy gates | ✓ | `npm test` 408/408, `npx tsc --noEmit` clean, `npm run build` clean |
 | P3.9 push to origin | ✓ | Last push `e5f48c6` at ~11:55 NZST |
-| P3.10a manual 5-case smoke on preview | ✓ done via /qa + /browse | Tested 3 cases through the real UI (Jack T NZ, Mia, Asthma load). Report at `.gstack/qa-reports/qa-report-clinical-care-partner-2026-05-28.md`. **Health score 64/100**. Found 1 critical (centre note never sent to /api/chat — console.tsx wiring gap), 2 medium (SessionRail active-state CSS specificity; NotePane patientName never threaded), 1 low (stale empty-state copy after note loaded), 1 low-confidence (CDP can't verify confirm dialog). Clinical safety preserved end-to-end; UI hand-off broken. |
+| P3.10a manual 5-case smoke on preview | ✓ done via /qa + /browse | Tested 3 cases through the real UI (Jack T NZ, Mia, Asthma load). Report at `.gstack/qa-reports/qa-report-clinical-care-partner-2026-05-28.md`. Health score 64/100. Found 1 critical (centre note never sent to /api/chat — console.tsx wiring gap), 2 medium (SessionRail active-state CSS specificity; NotePane patientName never threaded), 1 low (stale empty-state copy after note loaded), 1 low-confidence (CDP can't verify confirm dialog). Clinical safety preserved end-to-end; UI hand-off broken. |
+| QA fixes pushed (`f4618b2`) | ✓ ISSUE-001 + ISSUE-003 landed | One-file change to `app/console/console.tsx`: (a) `submit()` accepts currentNote, prepends it as the first user-message on turn 1 when non-empty; (b) `onLoadCase` parses session.name into patientName + patientSubLine + threads to NotePane. ISSUE-002 deferred pending re-verification (likely perception artifact). ISSUE-004 (low, stale empty-state copy) defer to post-brief. 42 files / 408 tests still pass. |
+| Re-test preview after fixes | ⏳ awaiting Vercel rebuild on `f4618b2` | Same /browse drill: load Jack T NZ → "What dose?" → confirm dose-card renders with dexamethasone 2.13mg this time. If green, ISSUE-001 confirmed fixed. Verify ISSUE-002 visually with snapshot tool reading actual CSS classes. |
 | P3.10b scripted curl smoke | ✓ **3/3 PASS** | Run on `8d64be9` preview at 12:15 NZST. Case 1: dose_card.drug=dexamethasone + tool_result.dose_mg=2.13. Case 2: prose-only airway-emergency abstention. Case 3: prose-only out-of-scope abstention. Script went through 3 fix iterations (UTF-8 stdout for → arrow; assert on .dose_card.tool_result.dose_mg not .dose_card.dose_mg; accept prose-only abstention as a valid second shape per D3). |
 | P3.11 DELETE PHASE (~22 files) | ✗ blocked on smoke approval | Per operator direction: STOP before delete; surface smoke results for review |
 | P3.12 push delete + 2nd preview smoke | ✗ blocked on P3.11 | |
@@ -126,6 +128,6 @@ e8fc4c7 feat(v3.1 lane B): registry extension (region + reassessment_plans + dif
 | `npm test` | 42 files / 408 tests pass | post `e5f48c6` |
 | `npx tsc --noEmit` | exit 0 | post `e5f48c6` |
 | `npm run build` | ✓ compiled (Next 16 Turbopack) + 8 static pages | post `e5f48c6` |
-| Vercel preview | ✓ `clinical-care-partner-22brofjnl-joshwilks111-maxs-projects.vercel.app` | on `8d64be9` |
-| Live scripted smoke | ✓ **3/3 PASS** | 2026-05-28 12:15 NZST against the URL above |
-| Live manual smoke (5 cases) | ⏳ awaiting operator | The only thing between us and the DECISION gate |
+| Vercel preview | ⏳ rebuilding on `f4618b2` (URL pending) | Previous: `clinical-care-partner-22brofjnl-...` on `8d64be9` |
+| Live scripted smoke | ✓ **3/3 PASS** | 2026-05-28 12:15 NZST against `8d64be9` preview; re-run pending on new URL |
+| Live manual smoke (5 cases) | ✓ partial (3 cases via /qa + /browse) | Found 1 crit + 2 med; both fixed in `f4618b2`. Re-verify after rebuild. |
