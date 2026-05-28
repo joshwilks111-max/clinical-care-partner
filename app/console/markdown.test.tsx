@@ -98,6 +98,16 @@ describe("renderInlineMarkdown — plain + malformed pass-through", () => {
     const { container } = render(<p>{renderInlineMarkdown("")}</p>);
     expect(container.querySelector("p")!.textContent).toBe("");
   });
+
+  it("stays linear-time on ReDoS-shaped input (untrusted note guard)", () => {
+    // The bold rule's inner group anchors each iteration to a distinct '*'
+    // (the \* literal + (?!\*) lookahead), so there's no catastrophic
+    // backtracking. A long run of asterisks must resolve fast, not hang.
+    const pathological = "**" + "*".repeat(20000) + "a";
+    const start = performance.now();
+    renderInlineMarkdown(pathological);
+    expect(performance.now() - start).toBeLessThan(250);
+  });
 });
 
 describe("renderInlineMarkdown — SECURITY: untrusted input is inert", () => {
