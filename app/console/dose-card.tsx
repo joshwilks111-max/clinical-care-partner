@@ -26,16 +26,19 @@
 // sub-line "binding limit 12 mg". This is the user-facing surface of the
 // deterministic safety cap fired by tools/calculate_dose.ts.
 //
-// Field provenance:
-//   drug, route, severity_row     → from DoseCardEmittedSchema (the JSON
-//                                    block the SKILL writes, validated by
-//                                    Lane C's response-validator)
-//   dose_mg, dose_ml, max_mg,     → MERGED IN from the calculate_dose tool
-//   capped, source_version,        result (deterministic — the model
-//   source_url                     never authors a number, D7 invariant).
+// Field provenance (v3.1 — all fields come from ONE source):
+//   drug, route, severity_row,    → the calculate_dose tool's output. The
+//   dose_mg, dose_ml, max_mg,        route's execute closure projects the
+//   capped, source_version,          registry fields (severity_row, max_mg,
+//   source_url                       source_*) onto the tool result, which
+//                                    the SDK ships to the client as a typed
+//                                    tool-calculate_dose UIMessagePart. The
+//                                    model never authors a number (D7).
 //
-// Both halves arrive together via lib/response-validator.ts; this
-// component is pure-presentational and doesn't itself perform the merge.
+// This component is pure-presentational — it receives a flat props object
+// (DoseCardProps) and renders it. There is no client-side merge: the v3.0
+// fence-emit + response-validator merge path was removed in the SDK rewrite
+// (the tool output IS the data the card renders).
 
 "use client";
 

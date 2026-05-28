@@ -17,13 +17,16 @@ any refusal → RefusalCard. The custom response-validator, the `X-Validated-Res
 fence-parsing that the v3.0 surface needed are all gone: with typed tool parts the structured output
 *is* the channel, so there is no model-authored-number path to police. The safety property is
 unchanged and arguably stronger — refusal is now a structural *type* rather than a prose disclaimer.
-Four commits: `11d319a` (the rewrite + drop fence-parsing), `0e94eab` (project tool outputs to card
+Eight commits: `11d319a` (the rewrite + drop fence-parsing), `0e94eab` (project tool outputs to card
 shapes + a hydration-safe clock), `338a311` (align the `ask_user` kind vocabulary, propagate the
 question text, teach the model to wait for the answer), `2f5968e` (+ New chat resets cleanly
-mid-stream via `stop()` + a disabled gate while streaming). Gates: `npx tsc --noEmit` exit 0, vitest
-38 files / 351 tests pass (legacy turn-route tests transitionally excluded), `npm run build` clean.
-The legacy `turn1/turn1.5/turn2` routes remain in the tree as dead code, slated for deletion in a
-follow-up cleanup pass.
+mid-stream via `stop()` + a disabled gate while streaming), `e5d402c` (delete the dead v3.0 routes +
+validator + legacy prompts — 48 files, ~11.6k lines), `6ef4fda` + `6f340ca` (align README / STATUS /
+CHANGELOG to v3.1 and retire the now-broken Promptfoo harness honestly), and `0821f5d` (make the
+region cookie authoritative for jurisdiction — the F-1 fix below). Gates: `npx tsc --noEmit` exit 0,
+vitest 26 files / 289 tests pass, `npm run build` clean (route surface is now just `/` + `/api/chat`).
+The legacy `turn1/turn1.5/turn2` routes — and the response-validator, the completeness + router
+modules, and the turn-state-machine prompts — are **deleted** in this release, not deferred.
 
 ### Added
 - **`app/api/chat/route.ts`** — the single v3.1 route: `streamText` + 4 tools + `stepCountIs(5)` +
@@ -45,9 +48,26 @@ follow-up cleanup pass.
   delimiters (the thin-harness / fat-skill split made literal).
 - **Registry narrowed to croup** for v3.1 (anaphylaxis deferred — see `TODOS.md` #7).
 
+### Fixed
+- **Region jurisdiction is now server-authoritative** (`app/api/chat/route.ts`). The region cookie set
+  by the UI toggle previously reached only the tool layer via `toolRegion ?? region`, which let the
+  model's guessed region win — so toggling to AU with a free-typed note still served NZ guidelines
+  (Starship source + 120-min reassess instead of RCH + 60-min). The dose number was always correct
+  (both registries use 0.15 mg/kg for moderate croup), so the divergence was source attribution +
+  reassessment timing only. The session region is now injected into the model's system context AND
+  treated as authoritative in `load_guideline` — same "server owns the fact, not the LLM" posture as
+  the dose spine.
+
 ### Removed
 - The fence-parsing response path, the custom response-validator, and the `X-Validated-Response`
   header — superseded by typed tool parts.
+- **The entire v3.0 turn-state-machine** (`app/api/turn1`, `turn1.5`, `turn2`), the
+  `response-validator` / `completeness` / `router` lib modules, and the `prompts/turn1*` /
+  `prompts/turn2` templates — 48 files, ~11.6k lines. These were kept on disk as a deploy-before-delete
+  safety net while the SDK rewrite was verified; with 5/5 demo smokes green on the live preview they
+  are deleted now. The Promptfoo eval harness (`tests/evals/provider.ts`) went with them, so
+  `npm run eval` is retired — the prompt change is covered by the unit suite, the `/api/chat`
+  integration tests, and the live demo smoke (see README §5).
 
 ## [1.3.0.0] - 2026-05-27
 
