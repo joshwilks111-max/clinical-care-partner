@@ -423,10 +423,16 @@ export async function POST(request: Request): Promise<Response> {
             // The AskUserArgsSchema in tools/ask_user.ts uses `prompt` not
             // `question`. We adapt here: the harness input schema uses
             // `question` (clearer for the LLM) and calls ask_user with the
-            // right shape. The empty-answer placeholder is replaced by the
-            // harness UI with the real clinician input before the next turn.
+            // right shape. The empty-answer placeholder is replaced when
+            // the clinician's typed reply arrives as the NEXT user turn.
             const result = ask_user({ kind, prompt: question });
-            return result;
+            // CRITICAL: project kind + question onto the tool output so the
+            // chat-panel's AskUserForm renders with the right input shape +
+            // the right prompt text. Without this, part.output is
+            // {answer:""}, which makes chat-panel fall through to its
+            // "free_text" / "Please provide more info." fallbacks — the
+            // smoke-2026-05-28 bug.
+            return { ...result, kind, question };
           },
         },
       },

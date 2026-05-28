@@ -9,16 +9,29 @@
 // fires (missing weight / ambiguous severity / unspecified condition).
 //
 // Visual contract: same <Alert variant="safety"> amber semaphore as
-// RefusalCard. The kind (weight | condition | severity) drives which
-// input shape renders:
-//   - weight    → number input + "kg" suffix
-//   - condition → free-text input
-//   - severity  → <Select> with mild | moderate | severe
+// RefusalCard. The `kind` drives which input shape renders. The kind
+// vocabulary MUST match the tool's input schema (tools/ask_user.ts:42-48
+// + the matching enum on app/api/chat/route.ts:411). The five permitted
+// kinds and their UI surface:
+//   - weight_kg → numeric input + "kg" suffix; min 0, max 200 (Guard-7)
+//   - severity  → <Select> of mild | moderate | severe
+//   - region    → <Select> of NZ | AU
+//   - confirm   → <Select> of Yes | No (e.g. "Is this weight in kg?")
+//   - free_text → open <Input> for anything that doesn't fit above
 //
 // On submit: the answer string is handed to onSubmit(); the parent
 // (ChatPanel) POSTs it as the NEXT user turn to /api/chat. The form is
 // then replaced by that user turn in the thread — preserving the audit
 // trail (the question and the answer both live in the conversation).
+//
+// History note (kept for git-blame readers): pre-2026-05-28 this file
+// used kind = "weight" | "condition" | "severity" — a vocabulary that
+// silently drifted out of sync with the tool's input schema. When the
+// model called ask_user({kind: "weight_kg"}), NONE of the input branches
+// matched, so the form rendered without any input field — just a Submit
+// button orphaned in space. The fix is this file aligning to the
+// tool's canonical vocabulary; the lesson is "if a UI takes a server-
+// declared enum, the enum names must match exactly."
 
 "use client";
 
@@ -34,7 +47,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
-export type AskUserKind = "weight" | "condition" | "severity";
+/**
+ * The closed set of slot kinds the form can render. MUST stay in sync
+ * with tools/ask_user.ts:AskUserKind and the route's input schema.
+ */
+export type AskUserKind =
+  | "weight_kg"
+  | "severity"
+  | "region"
+  | "confirm"
+  | "free_text";
 
 export interface AskUserFormProps {
   /** Which slot the skill is asking for. Drives the input shape. */
@@ -51,6 +73,8 @@ export interface AskUserFormProps {
 }
 
 const SEVERITY_OPTIONS = ["mild", "moderate", "severe"] as const;
+const REGION_OPTIONS = ["NZ", "AU"] as const;
+const CONFIRM_OPTIONS = ["Yes", "No"] as const;
 
 export function AskUserForm({
   kind,
@@ -82,7 +106,7 @@ export function AskUserForm({
         {question}
       </AlertDescription>
       <form onSubmit={handleSubmit} className="mt-1 flex items-end gap-2">
-        {kind === "weight" && (
+        {kind === "weight_kg" && (
           <div className="relative flex-1">
             <Input
               type="number"
@@ -95,7 +119,7 @@ export function AskUserForm({
               onChange={(e) => setValue(e.target.value)}
               disabled={disabled}
               placeholder="14.2"
-              className="pr-9 bg-white"
+              className="bg-white pr-9"
             />
             <span
               aria-hidden="true"
@@ -104,17 +128,6 @@ export function AskUserForm({
               kg
             </span>
           </div>
-        )}
-        {kind === "condition" && (
-          <Input
-            type="text"
-            aria-label={question}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            disabled={disabled}
-            placeholder="e.g. croup"
-            className="flex-1 bg-white"
-          />
         )}
         {kind === "severity" && (
           <Select value={value} onValueChange={setValue} disabled={disabled}>
@@ -129,6 +142,45 @@ export function AskUserForm({
               ))}
             </SelectContent>
           </Select>
+        )}
+        {kind === "region" && (
+          <Select value={value} onValueChange={setValue} disabled={disabled}>
+            <SelectTrigger aria-label={question} className="flex-1 bg-white">
+              <SelectValue placeholder="Select region" />
+            </SelectTrigger>
+            <SelectContent>
+              {REGION_OPTIONS.map((r) => (
+                <SelectItem key={r} value={r}>
+                  {r}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {kind === "confirm" && (
+          <Select value={value} onValueChange={setValue} disabled={disabled}>
+            <SelectTrigger aria-label={question} className="flex-1 bg-white">
+              <SelectValue placeholder="Select yes or no" />
+            </SelectTrigger>
+            <SelectContent>
+              {CONFIRM_OPTIONS.map((c) => (
+                <SelectItem key={c} value={c}>
+                  {c}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {kind === "free_text" && (
+          <Input
+            type="text"
+            aria-label={question}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            disabled={disabled}
+            placeholder="Type your answer…"
+            className="flex-1 bg-white"
+          />
         )}
         <Button
           type="submit"

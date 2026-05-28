@@ -557,21 +557,43 @@ function PartRenderer({
     }
 
     if (toolName === "ask_user") {
-      // ask_user's tool output is a placeholder ({answer: ""}); the form
-      // collects the clinician's real answer and we send it back as the
-      // next user turn (server-side execute pattern, not addToolOutput
-      // round-trip). On submit the parent's onSubmit appends a user
-      // message with the answer text.
+      // ask_user's tool output is {answer: "", kind, question} — the
+      // route's execute closure projects kind+question onto the result so
+      // this renderer doesn't need defensive fallbacks for them. The form
+      // collects the clinician's real answer; the parent's onSubmit
+      // appends it as the NEXT user turn to /api/chat (server-side
+      // execute pattern, not addToolOutput round-trip). The skill prompt
+      // tells the model "the next user turn IS the answer to your last
+      // ask_user" so it doesn't misread the typed weight as a decline.
       const askOutput = output as {
         kind?: AskUserKind;
-        prompt?: string;
         question?: string;
       };
-      const kind = (askOutput.kind ?? "free_text") as AskUserKind;
-      const question =
-        askOutput.prompt ?? askOutput.question ?? "Please provide more info.";
+      // Defensive: if a future regression strips kind/question (the
+      // 2026-05-28 bug), render LOUDLY so it's caught at smoke instead
+      // of silently degrading to free-text with placeholder copy.
+      if (!askOutput.kind || !askOutput.question) {
+        return (
+          <Alert
+            variant="destructive"
+            data-testid="tool-ask_user-malformed"
+            className="text-[12px]"
+          >
+            <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+            <AlertTitle>ask_user payload malformed</AlertTitle>
+            <AlertDescription>
+              The harness expected kind + question on the tool output and
+              received neither. This is a route-execute bug — file an issue.
+            </AlertDescription>
+          </Alert>
+        );
+      }
       return (
-        <AskUserForm kind={kind} question={question} onSubmit={onAskSubmit} />
+        <AskUserForm
+          kind={askOutput.kind}
+          question={askOutput.question}
+          onSubmit={onAskSubmit}
+        />
       );
     }
 
