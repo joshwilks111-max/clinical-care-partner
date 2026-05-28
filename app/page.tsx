@@ -8,6 +8,12 @@
 
 import { LandingPage } from "./landing/landing-page";
 
+export const metadata = {
+  title: "Care Partner — a clinical AI you can trust on the number",
+  description:
+    "An AI care partner for paediatric croup that proves its dose, cites its source, and refuses to guess. NZ + AU. Built for the Heidi take-home.",
+};
+
 export default function Home() {
   return <LandingPage />;
 }
