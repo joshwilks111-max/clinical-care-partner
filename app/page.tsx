@@ -1,12 +1,13 @@
 // app/page.tsx
 //
-// The structured care-partner console (DESIGN.md "UI states"). This replaces the
-// earlier placeholder shell. The page is a thin server component that mounts the
-// interactive client console (app/console/console.tsx) — the two-panel workspace
-// where the judgment→execution architecture is a visible, persistent seam.
+// The submission landing page — served at the root (joshw-heidi-interview.space/).
+// It walks the brief, tells the safety + region-routing + proof + build-journey
+// story, and sends the reviewer into the live console at /demo. A thin server
+// component that mounts the interactive client landing (app/landing/landing-page.tsx).
+// The console itself now lives at /demo.
 
-import { Console } from "./console/console";
+import { LandingPage } from "./landing/landing-page";
 
 export default function Home() {
-  return <Console />;
+  return <LandingPage />;
 }
