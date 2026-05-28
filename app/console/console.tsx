@@ -192,6 +192,12 @@ export function Console() {
       // submit on the chat composer (or types follow-up) to actually fire
       // a request — we deliberately don't auto-submit so the demo can be
       // edited first.
+      //
+      // Abort any in-flight stream BEFORE clearing messages — same race
+      // onNewChat guards against: without stop(), the transport keeps writing
+      // deltas onto the cleared array and the previous case's response bleeds
+      // into the newly loaded one. Safe no-op when idle.
+      stop();
       setNote(session.note);
       setMessages([]);
       setSeededFirstMessageId(undefined);
@@ -207,7 +213,7 @@ export function Console() {
       setPatientName(session.patient);
       setPatientSubLine(session.patient ? session.region : undefined);
     },
-    [setMessages],
+    [setMessages, stop],
   );
 
   const onNewSession = useCallback(() => {
@@ -285,7 +291,7 @@ export function Console() {
             This demo is built for desktop.
           </h1>
           <p className="mt-2 text-[13px] text-muted-foreground">
-            Open on a larger screen (≥ 1024px wide) to interact with the care
+            Open on a larger screen (≥ 1100px wide) to interact with the care
             partner.
           </p>
         </div>
