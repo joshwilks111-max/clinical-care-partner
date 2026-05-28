@@ -425,18 +425,18 @@ Locked **Variant A** via `/plan-design-review` 2026-05-28. The console migrates 
 screenshot:
 
 ```
-LEFT RAIL (220px)     │  CENTRE (700px)           │  RIGHT RAIL (520px)
+LEFT RAIL (220px)     │  CENTRE (note, fluid)     │  CARE PARTNER (≥1/3 vw)
 ───────────────────── │  ───────────────────────  │  ──────────────────────
-<H> logo (claret)     │  Case header + meta strip │  Care Partner chip
+<H> logo (claret)     │  Patient header + meta    │  Care Partner chip
 + New session         │  Action bar               │  + New chat link
 Nav (Scribe/Evid/Tsk) │  Tabs: Note / Trans / Tmp │  <Thread> role="log"
-Sessions list:        │  <Textarea> patient note  │    Empty state +
-  Jack T · croup (NZ) │  Collapsed accordion:     │    suggested-prompt
-  Jack T · croup (AU) │    Extracted facts        │    trinity (3 chips)
-  Mia R · ?epiglott.  │                           │    User → claret bubble
-  Weightless transcr. │                           │    Asst → cream-2 bubble
-  Asthma 5yo OOS      │                           │      with EMBEDDED
-                      │                           │      <DoseCard> +
+Eval bench (grouped): │  <Textarea> patient note  │    Empty state +
+  DOSES               │  Collapsed accordion:     │    suggested-prompt
+   Case 1 · Jack NZ…  │    Extracted facts        │    trinity (3 chips)
+  REFUSALS & ASKS     │                           │    User → claret bubble
+   Case 3 · no weight │                           │    Asst → cream-2 bubble
+  FOLLOW-UP           │                           │      with EMBEDDED
+   Case 11 · …        │                           │      <DoseCard> +
                       │                           │      <ReassessmentCard>
                       │                           │  <Composer>
                       │                           │    Context chip + input
@@ -444,8 +444,21 @@ Sessions list:        │  <Textarea> patient note  │    Empty state +
                       │                           │    NZ/AU region toggle
 ```
 
-Breakpoints: `220/700/520` at ≥1500px; `200/1fr/480` at 1180–1500px; `180/1fr/420` at 1024–1180px.
-Mobile <1024px deferred. Visual reference HTML at
+Column grid (shipped): `grid-cols-[220px_minmax(0,1fr)_minmax(33vw,42vw)]`.
+The rail is fixed 220px; the **Care Partner chat is floored at one third of the
+viewport** (grows to 42vw on wide screens) so it is always ≥1/3 of the screen
+(superseding the original fixed 520px right rail); the centre note pane takes
+what remains. Below 1100px the shell hides and a desktop-only banner shows
+(toggle lives as Tailwind `max-[1099px]:hidden` utilities on the elements).
+
+The left rail renders the **eval bench** (the 16 cases in `lib/eval-cases.ts`),
+one clickable row per case, grouped Doses / Refusals & asks / Follow-up. These
+are demo affordances for a reviewer (the same cases the external eval harness
+drives), not patient sessions — so the rows carry eval-explicit labels. The
+patient header in the centre is derived from each case's clinical note, not the
+rail label, so the eval taxonomy never leaks into the patient context.
+
+Visual reference HTML at
 `~/.gstack/projects/joshwilks111-max-clinical-care-partner/designs/heidi-chat-right-rail-20260528/variant-A-heidi-grammar.html`.
 
 **Design tokens (4 new, added to `app/globals.css`):**

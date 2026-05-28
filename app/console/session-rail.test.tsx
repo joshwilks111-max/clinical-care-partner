@@ -3,10 +3,13 @@
 // app/console/session-rail.test.tsx
 //
 // Asserts the SessionRail contract (D4 / D15):
-//   - All 5 demo sessions render.
-//   - Clicking a session fires onLoadCase with the right note.
-//   - The active session row carries the cream-2 + claret-left-border
-//     styling signature.
+//   - Every eval case (lib/eval-cases.ts) renders as a row.
+//   - case-1-jack-nz is FIRST (the real Heidi full note anchors the demo).
+//   - The distinct group headers render (generic group renderer, not the old
+//     hardcoded Today/Yesterday filter — a regression guard for the bug where
+//     a non-Today/Yesterday group rendered nothing).
+//   - Clicking a row fires onLoadCase with the right case (id + note).
+//   - The active row carries the cream-2 + claret-left-border styling signature.
 
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
@@ -14,19 +17,34 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { SessionRail, DEMO_SESSIONS } from "./session-rail";
 
 describe("SessionRail", () => {
-  it("renders all 5 demo sessions (D15)", () => {
+  it("renders a row for every eval case", () => {
     render(<SessionRail onLoadCase={() => {}} />);
-    expect(DEMO_SESSIONS.length).toBe(5);
-    // Each session's name should be present in the DOM.
+    expect(DEMO_SESSIONS.length).toBeGreaterThanOrEqual(10);
     for (const s of DEMO_SESSIONS) {
       expect(screen.getByText(s.name)).toBeInTheDocument();
+    }
+  });
+
+  it("renders case-1-jack-nz first (the real Heidi full note)", () => {
+    expect(DEMO_SESSIONS[0].id).toBe("case-1-jack-nz");
+  });
+
+  it("renders a header for each distinct group (generic group renderer)", () => {
+    render(<SessionRail onLoadCase={() => {}} />);
+    const groups = [...new Set(DEMO_SESSIONS.map((s) => s.group))];
+    // More than one group exists, and each header text is in the DOM. This is
+    // the regression guard: the old code hardcoded "Today"/"Yesterday" filters,
+    // so any other group value rendered zero rows.
+    expect(groups.length).toBeGreaterThan(1);
+    for (const g of groups) {
+      expect(screen.getByText(g)).toBeInTheDocument();
     }
   });
 
   it("fires onLoadCase with the right session when a row is clicked", () => {
     const onLoadCase = vi.fn();
     render(<SessionRail onLoadCase={onLoadCase} />);
-    const target = DEMO_SESSIONS[2]; // mia-r-epiglottitis
+    const target = DEMO_SESSIONS[0]; // case-1-jack-nz
     fireEvent.click(screen.getByText(target.name));
     expect(onLoadCase).toHaveBeenCalledTimes(1);
     expect(onLoadCase).toHaveBeenCalledWith(

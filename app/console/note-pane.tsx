@@ -1,6 +1,9 @@
 // app/console/note-pane.tsx
 //
-// CENTRE column of the 3-column shell (D4). 700px at ≥1500px; 1fr below.
+// CENTRE column of the 3-column shell (D4). minmax(0,1fr) — takes the space
+// left after the 220px rail and the ≥1/3-viewport chat column (chat widened
+// from a fixed 520px so the Care Partner is always ≥1/3 of the screen; see
+// console.tsx grid + DESIGN.md §11).
 // Replaces today's stepped Turn 1 / Turn 2 view with a single
 // utilitarian note pane — "big enough to paste into, no more" (locked
 // in approved.json: "Centre is utilitarian — note paste area, not a

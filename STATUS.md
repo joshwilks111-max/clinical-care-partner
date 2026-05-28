@@ -158,7 +158,7 @@ e8fc4c7 feat(v3.1 lane B): registry extension (region + reassessment_plans + dif
 
 | Gate | Last result | When |
 |---|---|---|
-| `npx vitest run` | **38 files / 351 tests pass** | post `2f5968e` (re-run for this status update; legacy turn-route tests excluded transitionally per `vitest.config.ts`) |
+| `npx vitest run` | **27 files / 305 tests pass** | post `db30390` (v1.6.0.0 eval-rail; the dead Promptfoo suite under `tests/evals/` was removed, dropping the file count) |
 | `npx tsc --noEmit` | **exit 0** | post `2f5968e` |
 | `npm run build` | ✓ compiled (Next 16 Turbopack) + static pages | post `e5f48c6` (pre-deploy gate P3.8); no build-affecting change since |
 | Vercel preview | ✓ `hns9wb4gg` on `2f5968e` | canonical alias: https://clinical-care-partner.vercel.app |

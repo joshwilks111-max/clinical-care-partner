@@ -130,6 +130,11 @@
   --cream-2: #ede5d4;
   --claret: #5b2230;
   --claret-ink: #ffffff;
+  /* Warm muted text for secondary copy ON the cream surface. The slate
+     --muted-foreground (#64748b) is only ~4.2:1 on cream (below AA); this
+     warm tone is the 4.7:1 value DESIGN.md §11 cites as verified. Use it for
+     muted text on cream, not --muted-foreground. */
+  --muted-ink: #7a6e62;
   /* Serif font-stack used by titles, dose-card headline value, reass-card
      title, case-header name. The fallback chain prefers Charter (macOS),
      then Source Serif Pro / Iowan Old Style, then Georgia as the universal
@@ -203,16 +208,7 @@
   background: linear-gradient(180deg, #f4faff 0%, #e8f1f7 100%);
 }
 
-/* Bluey 3-column shell — narrow-viewport toggle (eng-review lock #7).
-   CSS-only swap, no JS matchMedia listener (avoids hydration mismatch).
-   - ≥ 1100px : the 3-column shell renders, the banner is hidden.
-   - < 1100px : the shell is hidden, the "open on a larger screen" banner shows.
-   Demo is desktop-only by design — the 3-column reading-grammar IS the product. */
-@media (max-width: 1099px) {
-  .bluey-shell {
-    display: none !important;
-  }
-  .narrow-viewport-banner {
-    display: flex !important;
-  }
-}
+/* Narrow-viewport toggle moved to Tailwind responsive utilities on the
+   elements themselves (console.tsx: shell `max-[1099px]:hidden`, banner
+   `max-[1099px]:flex`). A raw global rule here was silently dropped by the
+   Tailwind v4 build and never hid the shell — utilities are deterministic. */

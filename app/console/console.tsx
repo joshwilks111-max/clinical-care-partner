@@ -10,7 +10,7 @@
 //
 //   <SessionRail>  (LEFT, 220px)  — 5 demo cases, click → load note + reset chat
 //   <NotePane>     (CENTRE, 1fr)  — note textarea + extracted-facts accordion
-//   <ChatPanel>    (RIGHT, 520px) — thread + composer + suggested prompts
+//   <ChatPanel>    (RIGHT, ≥1/3 vw) — thread + composer + suggested prompts
 //
 // State owned here:
 //   - note: string                       — the centre-pane note content
@@ -192,25 +192,28 @@ export function Console() {
       // submit on the chat composer (or types follow-up) to actually fire
       // a request — we deliberately don't auto-submit so the demo can be
       // edited first.
+      //
+      // Abort any in-flight stream BEFORE clearing messages — same race
+      // onNewChat guards against: without stop(), the transport keeps writing
+      // deltas onto the cleared array and the previous case's response bleeds
+      // into the newly loaded one. Safe no-op when idle.
+      stop();
       setNote(session.note);
       setMessages([]);
       setSeededFirstMessageId(undefined);
       setActiveSessionId(session.id);
 
-      // Parse session.name (e.g. "Jack T · croup (NZ)" or "Mia R · ?epiglottitis")
-      // into a patient name + condition sub-line. The format is "<Name> · <rest>"
-      // — split on the first " · " separator. If no separator, the whole label
-      // is the name and the sub-line stays empty.
-      const sep = session.name.indexOf(" · ");
-      if (sep === -1) {
-        setPatientName(session.name);
-        setPatientSubLine(undefined);
-      } else {
-        setPatientName(session.name.slice(0, sep));
-        setPatientSubLine(session.name.slice(sep + 3));
-      }
+      // The patient header is derived from the CASE'S CLINICAL CONTENT, never
+      // from the rail label. The rail labels are eval-explicit ("Case 7 ·
+      // weight 14200 → implausible") — splitting those on " · " would put
+      // "Case 7" in the patient-name slot and the eval taxonomy in the
+      // sub-line (design-review F1). Instead we use the patient name parsed
+      // from the prompt's "Patient:" line plus the region. Terse prompts with
+      // no "Patient:" line leave the header in its neutral state.
+      setPatientName(session.patient);
+      setPatientSubLine(session.patient ? session.region : undefined);
     },
-    [setMessages],
+    [setMessages, stop],
   );
 
   const onNewSession = useCallback(() => {
@@ -228,16 +231,23 @@ export function Console() {
 
   // ─── Render — 3-column Heidi-grammar shell ───────────────────────────────
   //
-  // Breakpoints per D4 (design-review 2026-05-28): 220/700/520 ≥1500px,
-  // 200/1fr/480 1180–1500px, 180/1fr/420 1024–1180px. Mobile <1024px
-  // deferred (TODO; see TODOS.md). The narrow-viewport banner from the
-  // old shell is preserved for ≤1024px users.
+  // Columns: 220px fixed rail · minmax(0,1fr) centre note · minmax(33vw,42vw)
+  // chat. The chat column is floored at one third of the viewport (grows to
+  // 42vw on wide screens) so the Care Partner is always ≥1/3 of the screen;
+  // minmax(0,1fr) on the centre stops the note textarea from overflowing its
+  // track. Mobile <1100px is deferred — the narrow-viewport banner below
+  // takes over (globals.css ≤1099px).
 
   return (
     <>
       <div
         data-testid="heidi-grammar-shell"
-        className="heidi-shell grid h-screen w-full grid-cols-[220px_1fr_520px]"
+        // Desktop-only by design. The narrow-viewport toggle is expressed as
+        // Tailwind responsive utilities (same cascade layer as `grid`), NOT a
+        // raw globals.css rule — an earlier .bluey-shell/.heidi-shell global
+        // selector silently failed to compile, so the shell never hid below
+        // 1100px. max-[1099px]:hidden is build-deterministic.
+        className="heidi-shell grid h-screen w-full grid-cols-[220px_minmax(0,1fr)_minmax(33vw,42vw)] max-[1099px]:hidden"
       >
         <SessionRail
           activeSessionId={activeSessionId ?? undefined}
@@ -269,19 +279,19 @@ export function Console() {
         />
       </div>
 
-      {/* Narrow-viewport banner — preserved from the prior shell. CSS-only
-          so no hydration risk. Shell above is hidden in CSS at <1024px;
-          this banner is hidden ≥1024px. */}
+      {/* Narrow-viewport banner — the inverse toggle of the shell above.
+          Hidden ≥1100px, shown (flex) below, via Tailwind responsive utilities
+          (no globals.css rule). No JS matchMedia, so no hydration mismatch. */}
       <div
         data-testid="narrow-viewport-banner"
-        className="narrow-viewport-banner hidden h-screen items-center justify-center bg-background px-6 text-center"
+        className="narrow-viewport-banner hidden h-screen items-center justify-center bg-background px-6 text-center max-[1099px]:flex"
       >
         <div className="max-w-sm">
           <h1 className="text-[18px] font-semibold text-foreground">
             This demo is built for desktop.
           </h1>
           <p className="mt-2 text-[13px] text-muted-foreground">
-            Open on a larger screen (≥ 1024px wide) to interact with the care
+            Open on a larger screen (≥ 1100px wide) to interact with the care
             partner.
           </p>
         </div>
