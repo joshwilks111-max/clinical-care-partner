@@ -84,6 +84,16 @@ export function Console() {
   const [note, setNote] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  // ISSUE-003 fix (qa-report 2026-05-28): NotePane.patientName + sub-line
+  // were never threaded from console.tsx. When onLoadCase fires we parse
+  // the patient name + condition out of the session label (e.g.
+  // "Jack T · croup (NZ)" → name "Jack T", condition "croup (NZ)") and
+  // pass them down so the centre header swaps from the empty-state
+  // FilePlus avatar to the claret-bg patient initials.
+  const [patientName, setPatientName] = useState<string | undefined>(undefined);
+  const [patientSubLine, setPatientSubLine] = useState<string | undefined>(
+    undefined,
+  );
 
   // ─── Derive originalNote chip from the first user message (D13) ──────────
   //
@@ -112,7 +122,11 @@ export function Console() {
   // silently swallow failures.
 
   const submit = useCallback(
-    async (userText: string, currentMessages: ChatMessage[]) => {
+    async (
+      userText: string,
+      currentMessages: ChatMessage[],
+      currentNote: string,
+    ) => {
       const userMsg: ChatMessage = {
         id: nextMessageId(),
         role: "user",
@@ -123,16 +137,31 @@ export function Console() {
       setIsStreaming(true);
 
       try {
-        const { prose, validated } = await postChat(
+        // ISSUE-001 fix (qa-report 2026-05-28): the centre note is the patient
+        // context the chat is asking ABOUT. On the FIRST turn (currentMessages
+        // empty) when a note is loaded, prepend it as the first user-role
+        // message in the POST payload — matching the route's existing
+        // `firstUserContent` pinning at app/api/chat/route.ts:128. The UI
+        // thread above still only renders the typed user turn; the note stays
+        // visible in the centre column. On turn 2+ the route's
+        // originalNote-injection-on-multi-turn fires automatically and the
+        // skill keeps cross-referencing the same note.
+        const noteSeed: { role: "user"; content: string }[] =
+          currentMessages.length === 0 && currentNote.trim().length > 0
+            ? [{ role: "user", content: currentNote.trim() }]
+            : [];
+
+        const { prose, validated } = await postChat([
+          ...noteSeed,
           // The route reads ModelMessage shape; map our ChatMessage union
           // to {role, content} pairs. Assistant turns we've already
           // rendered get their text aggregated from any prose field.
-          nextMessages.map((m) =>
+          ...nextMessages.map((m) =>
             m.role === "user"
               ? { role: "user" as const, content: m.text }
               : { role: "assistant" as const, content: m.content.prose ?? "" },
           ),
-        );
+        ]);
 
         const assistantMsg: ChatMessage = {
           id: nextMessageId(),
@@ -169,9 +198,11 @@ export function Console() {
           // Strip the error assistant turn from messages; re-submit with the
           // original payload. We compute the "messages before this attempt"
           // from currentMessages (the snapshot passed into submit), NOT from
-          // the closed-over `messages` (which may have grown since).
+          // the closed-over `messages` (which may have grown since). Same
+          // for currentNote — retry replays with the same context, not
+          // whatever the user might have typed since.
           setMessages(nextMessages);
-          void submit(userText, currentMessages);
+          void submit(userText, currentMessages, currentNote);
         };
         setMessages([
           ...nextMessages,
@@ -198,15 +229,17 @@ export function Console() {
 
   const onChatSubmit = useCallback(
     async (text: string) => {
-      await submit(text, messages);
+      await submit(text, messages, note);
     },
-    [submit, messages],
+    [submit, messages, note],
   );
 
   const onNewChat = useCallback(() => {
     setMessages([]);
     setNote("");
     setActiveSessionId(null);
+    setPatientName(undefined);
+    setPatientSubLine(undefined);
   }, []);
 
   const onLoadCase = useCallback((session: DemoSession) => {
@@ -218,6 +251,19 @@ export function Console() {
     setNote(session.note);
     setMessages([]);
     setActiveSessionId(session.id);
+
+    // Parse session.name (e.g. "Jack T · croup (NZ)" or "Mia R · ?epiglottitis")
+    // into a patient name + condition sub-line. The format is "<Name> · <rest>"
+    // — split on the first " · " separator. If no separator, the whole label
+    // is the name and the sub-line stays empty.
+    const sep = session.name.indexOf(" · ");
+    if (sep === -1) {
+      setPatientName(session.name);
+      setPatientSubLine(undefined);
+    } else {
+      setPatientName(session.name.slice(0, sep));
+      setPatientSubLine(session.name.slice(sep + 3));
+    }
   }, []);
 
   const onNewSession = useCallback(() => {
@@ -251,6 +297,8 @@ export function Console() {
         <NotePane
           note={note}
           onNoteChange={setNote}
+          patientName={patientName}
+          patientSubLine={patientSubLine}
           facts={facts}
           region="NZ"
         />
