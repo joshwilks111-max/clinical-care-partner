@@ -172,14 +172,18 @@ row, then ask a follow-up in the chat panel (or type your own note into the cent
 ## 5. Evals
 
 ```bash
-npm run eval       # wraps: promptfoo eval -c promptfoo.yaml --no-cache
+npm run eval       # promptfoo eval — see the v3.1 note below before running
 ```
 
-> **v3.1 note:** the Promptfoo suite below still drives the legacy `turn1/turn1.5/turn2` routes
-> (`tests/evals/provider.ts` imports those handlers directly). The v3.1 chat route is covered by
-> `app/api/chat/route.ts`'s own integration tests (9/9) and the live preview smoke (see `STATUS.md`);
-> porting the Promptfoo cases onto the single chat route is tracked deferred work. The figures here
-> are an accurate record of the legacy eval, not the v3.1 product surface.
+> **v3.1 note — the Promptfoo harness was retired with the legacy routes.** The suite below drove
+> the `turn1/turn1.5/turn2` routes through a `tests/evals/provider.ts` bridge; the v3.1 step-11
+> cleanup (commit `e5d402c`) deleted those routes **and** that bridge, so `npm run eval` does not
+> currently run end-to-end (the provider it points at is gone). The figures in this section are a
+> **historical record** of the legacy named-check eval, kept because the methodology (named checks,
+> not an aggregate %) is the point. The v3.1 chat route is gated instead by the unit suite
+> (`tools/*`, `registry/*`, `lib/*` — the deterministic safety spine), `app/api/chat/route.ts`'s
+> integration tests, and the live preview smoke (see [`STATUS.md`](STATUS.md)). Porting the named
+> cases onto the single `/api/chat` route is tracked deferred work in [`TODOS.md`](TODOS.md).
 
 The suite is **10 cases**, last live-verified **8/10 on v1.2.0.0** (~62k tokens, ~2m48s, run id
 `eval-3PU-2026-05-27`). It reports **named checks, not an aggregate %** — each assertion is its own
@@ -197,11 +201,13 @@ features changed the eval-driver/override interaction surface.)
 Two layers:
 
 - **Promptfoo** (6 demo cases + prompt-injection + no-matching-guideline + a collapse rule-out→dose
-  case + a must-not-miss-confirmed→abstain case = 10) exercises the LLM-bearing behaviour, asserting
+  case + a must-not-miss-confirmed→abstain case = 10) exercised the LLM-bearing behaviour, asserting
   against the **structured tool output** (not a prose regex), plus a wrong-guideline **audit
-  assertion** (routed `guideline_id` matches the confirmed condition).
+  assertion** (routed `guideline_id` matches the confirmed condition). *(Historical — drove the
+  now-deleted legacy routes; see the v3.1 note above. The named-check methodology is the takeaway.)*
 - **Unit tests** (`tools/*.test.ts`, `registry/*.test.ts`, `lib/*.test.ts`) exercise the
-  deterministic guards and edges — the safety spine, exact-assertion tested.
+  deterministic guards and edges — the safety spine, exact-assertion tested. **This is the live
+  gate** (38 files / 351 tests on v3.1), alongside the `/api/chat` integration tests + live smoke.
 
 **Reproducibility:** doses are **identical every run** (case1 2.13 mg · case3 0.14 mg/0.14 mL · case4
 12 mg capped · case7 2.13 mg · case9 2.13 mg after the collapse rules out the must-not-miss). There
