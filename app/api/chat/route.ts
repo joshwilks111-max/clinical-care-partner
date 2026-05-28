@@ -56,6 +56,7 @@ import { calculate_dose } from "@/tools/calculate_dose";
 import { load_guideline } from "@/tools/load_guideline";
 import { get_reassessment_plan } from "@/tools/get_reassessment_plan";
 import { ask_user } from "@/tools/ask_user";
+import { getDoseRule, getGuideline } from "@/registry/guidelines";
 import { getSystemPrompt } from "@/lib/skill-loader";
 import { getRegion } from "@/lib/region";
 
@@ -287,6 +288,42 @@ export async function POST(request: Request): Promise<Response> {
               dose_rule_id,
               weight_kg,
             );
+
+            // On a successful dose, project the registry fields the DoseCard
+            // needs (severity_row label, max_mg cap, source_version + url) onto
+            // the result. This keeps the SAFETY SPINE intact — numbers still
+            // come from the deterministic tool, the model never authors them —
+            // while giving the client one self-contained payload to render.
+            //
+            // We look up max_mg / source_version / source_url from the dose
+            // rule itself, and the severity_row label by reverse-mapping the
+            // severity_rows[] array against the rule id (a row's
+            // applies_to_dose_rule_id points at the rule it dose-routes to).
+            // If two rows share the same rule (mild + moderate both → croup-
+            // dex-moderate), we surface the higher-acuity label so the audit
+            // trail records the row that triggered escalation criteria.
+            if (result.kind === "dose") {
+              const rule = getDoseRule(guideline_id, dose_rule_id);
+              const guideline = getGuideline(guideline_id);
+              const severityRow =
+                guideline?.severity_rows
+                  .filter((r) => r.applies_to_dose_rule_id === dose_rule_id)
+                  .map((r) => r.label)
+                  .sort()
+                  .reverse()[0] ?? "unspecified";
+              return {
+                ...result,
+                tool_call_id: toolCallId,
+                // Card-facing fields — projected from the registry rule, NOT
+                // model-authored. The DoseCardProps shape expects these.
+                severity_row: severityRow,
+                max_mg: rule?.max_mg ?? null,
+                source_version: rule?.source_version ?? "",
+                source_url: rule?.source_url ?? null,
+              };
+            }
+            // Refusal path — pass through unchanged; the refusal renderer
+            // reads {kind:"refusal", reason, message}.
             return { ...result, tool_call_id: toolCallId };
           },
         },
@@ -318,6 +355,46 @@ export async function POST(request: Request): Promise<Response> {
               initial_severity,
               dose_rule_id,
             );
+
+            // On a successful plan, project the registry shapes onto the card
+            // shape:
+            //   watch_for: WatchForItem[] {sign, severity_implication}
+            //     → string[] ("sign — severity_implication") so the amber chips
+            //     carry both the sign and what it implies clinically (the chip
+            //     row would otherwise drop severity_implication entirely).
+            //   next_branches: registry shape {if_severity_at_reassessment,
+            //     action, setting, escalate_to, notes}
+            //     → card shape {if_severity_at_reassessment, then, escalate?}
+            //     where `then` is action + (escalate_to suffix when present),
+            //     and `escalate` is true when the branch routes to ICU or has
+            //     a non-null escalate_to (the amber-bordered "if worse" path).
+            //   watch_for_summary + next_steps_summary are computed (the
+            //     registry doesn't ship them; we synthesise from the plan).
+            if (result.status === "ok") {
+              const watchForStrings = result.watch_for.map(
+                (w) => `${w.sign} — ${w.severity_implication}`,
+              );
+              const nextBranches = result.next_branches.map((b) => ({
+                if_severity_at_reassessment: b.if_severity_at_reassessment,
+                then: b.escalate_to
+                  ? `${b.action} · ${b.escalate_to}`
+                  : b.action,
+                escalate:
+                  b.escalate_to !== null ||
+                  b.setting === "icu" ||
+                  b.setting === "continue_current",
+              }));
+              return {
+                ...result,
+                tool_call_id: toolCallId,
+                // Card-facing fields (project from registry shapes).
+                watch_for: watchForStrings,
+                next_branches: nextBranches,
+                watch_for_summary: `${watchForStrings.length} watch-for signs · ${nextBranches.length} branch options`,
+                next_steps_summary: `Reassess at ${result.reassess_in_minutes} min`,
+              };
+            }
+            // Refusal path — pass through unchanged.
             return { ...result, tool_call_id: toolCallId };
           },
         },

@@ -34,6 +34,7 @@
 
 "use client";
 
+import { useEffect, useState } from "react";
 import { Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -118,10 +119,15 @@ export function ReassessmentCard({
     );
   }
 
-  // Compute the wall-clock time we ask the clinician to come back at. We
-  // anchor on render-time `new Date()` — fine for v1; a Phase 3 polish
-  // pass could thread the dose-administered-at timestamp through.
-  const reassessAt = formatReassessTime(new Date(), reassess_in_minutes);
+  // HYDRATION-SAFE clock: server-rendered HTML cannot include `new Date()`
+  // because the server's wall-clock differs from the client's, which causes
+  // React error #418 (hydration mismatch). We render an em-dash placeholder
+  // on the server + first client render, then compute the real time in
+  // useEffect — runs only on the client, after hydration is complete.
+  const [reassessAt, setReassessAt] = useState<string>("—:—");
+  useEffect(() => {
+    setReassessAt(formatReassessTime(new Date(), reassess_in_minutes));
+  }, [reassess_in_minutes]);
   const duration = formatDuration(reassess_in_minutes);
 
   return (
