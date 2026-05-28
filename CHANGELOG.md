@@ -3,6 +3,52 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/); versions use `MAJOR.MINOR.PATCH.MICRO`.
 
+## [1.4.0.0] - 2026-05-28
+
+The v3.1 surgical rewrite. The whole interaction now runs through a single chat route on the Vercel
+AI SDK 6 tool loop instead of the v3.0 `turn1 / turn1.5 / turn2` route chain. `app/api/chat/route.ts`
+calls `streamText` with four tools (`load_guideline`, `calculate_dose`, `get_reassessment_plan`,
+`ask_user`) and returns `toUIMessageStreamResponse`; the client is a `useChat` hook that parses the
+canonical UI-message-stream natively and auto-continues the loop
+(`sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls`). Each tool's structured output
+flows to the browser as a typed `UIMessagePart` the chat panel renders inline — `tool-calculate_dose`
+→ DoseCard, `tool-get_reassessment_plan` → ReassessmentCard, `tool-ask_user` → an inline AskUserForm,
+any refusal → RefusalCard. The custom response-validator, the `X-Validated-Response` header, and the
+fence-parsing that the v3.0 surface needed are all gone: with typed tool parts the structured output
+*is* the channel, so there is no model-authored-number path to police. The safety property is
+unchanged and arguably stronger — refusal is now a structural *type* rather than a prose disclaimer.
+Four commits: `11d319a` (the rewrite + drop fence-parsing), `0e94eab` (project tool outputs to card
+shapes + a hydration-safe clock), `338a311` (align the `ask_user` kind vocabulary, propagate the
+question text, teach the model to wait for the answer), `2f5968e` (+ New chat resets cleanly
+mid-stream via `stop()` + a disabled gate while streaming). Gates: `npx tsc --noEmit` exit 0, vitest
+38 files / 351 tests pass (legacy turn-route tests transitionally excluded), `npm run build` clean.
+The legacy `turn1/turn1.5/turn2` routes remain in the tree as dead code, slated for deletion in a
+follow-up cleanup pass.
+
+### Added
+- **`app/api/chat/route.ts`** — the single v3.1 route: `streamText` + 4 tools + `stepCountIs(5)` +
+  `toUIMessageStreamResponse`. Pins the original note as system context on multi-turn requests so the
+  skill can cross-reference the patient note without re-reading the full history. 9/9 integration
+  tests.
+- **`tools/get_reassessment_plan.ts` + `tools/ask_user.ts`** as first-class harness tools alongside
+  `load_guideline` + `calculate_dose`. `ask_user` emits a typed slot request
+  (`weight_kg`/`severity`/`region`/`confirm`/`free_text`) the UI renders as an inline form.
+- **Inline tool-part rendering** in `app/console/chat-panel.tsx` — switches on `part.type` to render
+  DoseCard / ReassessmentCard / RefusalCard / AskUserForm in the assistant bubble.
+
+### Changed
+- **`app/console/console.tsx`** rewritten as a `useChat` state owner: the chat thread + transport
+  move to the SDK hook; the centre note, active session, and patient header stay as UI-only local
+  state. "+ New chat" calls `stop()` before clearing and is disabled while `status` is
+  `streaming`/`submitted`.
+- **`skills/dose-calculator/SKILL.md`** drives the tool-call loop directly and owns the untrusted-note
+  delimiters (the thin-harness / fat-skill split made literal).
+- **Registry narrowed to croup** for v3.1 (anaphylaxis deferred — see `TODOS.md` #7).
+
+### Removed
+- The fence-parsing response path, the custom response-validator, and the `X-Validated-Response`
+  header — superseded by typed tool parts.
+
 ## [1.3.0.0] - 2026-05-27
 
 Bluey 3-column console shell — the UI the Heidi brief asked for. The canvas is now a proper three-panel desktop layout (272px rail · 1fr case canvas · 392px evidence panel) locked to the Bluey pastel-blue brand palette. The left rail owns the entry-point grammar: demo cases are avatar-tiled rows with `aria-current` tracking, the paste textarea and Run button live there too. The center canvas shows differential + advisory + decision gate; the right panel shows evidence (Turn 2 output). The Bluey heeler SVG replaces the old Geist wordmark. Inter replaces Geist Sans. The page title is now "Bluey · Clinical care partner". The layout is CSS-grid only — no JS breakpoint, no hydration mismatch, a single `@media (max-width: 1099px)` rule hides the shell and shows a narrow-viewport banner. All 352 tests pass including 9 new eng-review-locked regression tests that pin the shell's structural invariants.

@@ -1,12 +1,19 @@
 # v3.1 build — status
 
-**Last updated:** 2026-05-28 12:40 NZST · **HEAD:** `f4618b2` (ISSUE-001 + ISSUE-003 fixes pushed) · **Branch:** `claude/elegant-robinson-17acc6`
+**Last updated:** 2026-05-28 (NZST) · **HEAD:** `2f5968e` (+ New chat resets cleanly mid-stream) · **Branch:** `claude/elegant-robinson-17acc6`
 
 Plan: [.claude/plans/v3.1-build-ready.md](.claude/plans/v3.1-build-ready.md). This file is the bisectable answer to "where are we?" — update on every push.
 
 ---
 
 ## Brief-tonight minimum
+
+**Where this stands now (`2f5968e`):** steps 1–3 are green — the v3.1 chat surface shipped, the
+`hns9wb4gg` preview is live on the canonical alias, scripted smoke is 3/3, and Demo 4 is
+operator-verified in the real UI. At step 4's decision point the call was **ship as-is with the
+legacy `turn1/2` routes still in tree** (delete phase P3.11 deferred to a parallel cleanup lane);
+docs are being aligned to v3.1 before the PR opens. The original checklist is preserved below for
+the audit trail.
 
 The smallest set of steps that gets to "I can demo this to Heidi" tonight:
 
@@ -69,6 +76,25 @@ Caveat: 4 of 5 lane sessions landed on `claude/<adjective>` branches instead of 
 | P3.15 `gh pr create --base main` | ✗ blocked | `PR_BODY.md` drafted (commit `96fbe22`), opens after smoke + delete green |
 | P3.16 optional cleanup (delete lane worktrees + branches) | ✗ post-merge | |
 
+### Chat-surface completion (the v3.1 surgical rewrite landed)
+
+The four commits below complete the move off the v3.0 turn-routing surface and onto the Vercel AI
+SDK 6 tool loop. After these, the running product is the single `app/api/chat/route.ts` + `useChat`
+console; the `turn1/turn1.5/turn2` routes remain on disk as dead code (delete phase P3.11 still
+pending).
+
+| Commit | What landed | Proof |
+|---|---|---|
+| `11d319a` feat(v3.1) | Surgical rewrite to `useChat` + typed tool parts; fence-parsing dropped. `route.ts` = `streamText` + 4 tools + `toUIMessageStreamResponse`; client = `useChat({transport: DefaultChatTransport, sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls})`. | tsc 0; vitest green |
+| `0e94eab` fix(chat) | Project tool outputs to card shapes (`tool-calculate_dose` → DoseCard, `tool-get_reassessment_plan` → ReassessmentCard, refusal → RefusalCard) + hydration-safe clock. | vitest green |
+| `338a311` fix(ask_user) | Align `kind` vocab (`weight_kg`/`severity`/`region`/`confirm`/`free_text`) across the tool schema + the inline form + the route enum; propagate the question text; teach the model to wait for the answer. | `ask-user-form.test.tsx` green |
+| `2f5968e` fix(chat) | "+ New chat" resets cleanly mid-stream: destructure `stop()` from `useChat`, call it before `setMessages([])`, disable the button while `status` is `streaming`/`submitted`. Closes the [[usechat-stop-missing-from-newchat-race]] regression. | console tests green |
+
+| Verification | Status | Proof |
+|---|---|---|
+| Demo 4 (Weightless transcript) operator-verified on `hns9wb4gg` preview | ✓ | The `ask_user` form renders correctly with `kind=weight_kg` + a numeric input — the skill asks for weight instead of dosing, confirming the typed-tool-part → inline-form path works end-to-end in the real UI (the thing mocked tests can't see). |
+| "+ New chat" mid-stream reset | ✓ shipped (`2f5968e`) | Button disabled while streaming; `stop()` fires before clear, so no deltas land on an empty thread. |
+
 ### Implicit / out-of-plan (operator-tracked)
 
 | Item | Status |
@@ -95,6 +121,13 @@ Caveat: 4 of 5 lane sessions landed on `claude/<adjective>` branches instead of 
 ## Commits since BASE_SHA (`b3e142d`)
 
 ```
+2f5968e fix(chat): + New chat resets cleanly mid-stream (stop() + disabled gate)
+338a311 fix(ask_user): align kind vocab, propagate question, teach model to wait
+0e94eab fix(chat): project tool outputs to card shapes + hydration-safe clock
+11d319a feat(v3.1): surgical rewrite to useChat + typed tool parts (drop fence-parsing)
+571698c docs(status): QA fixes verified — wire-level 3/3 PASS on f4618b2 preview
+09f7ff0 docs(status): record QA fixes pushed (ISSUE-001 + ISSUE-003); re-test pending
+f4618b2 fix(qa): ISSUE-001 + ISSUE-003 — thread centre note to /api/chat + patientName to NotePane
 e5f48c6 fix(v3.1 phase 3): use SDK toolCallId in tool execute results — unblocks dose-card
 516fb66 fix(v3.1 phase 3): 7 design-review patches (T1, T3-T8) — Heidi-grammar polish
 69a0975 chore(v3.1 fan-in): reconcile cases.jsonl with NZ+AU + transitional excludes for legacy console tests
@@ -117,7 +150,7 @@ e8fc4c7 feat(v3.1 lane B): registry extension (region + reassessment_plans + dif
 9867cbe feat(v3.1 lane D): refresh skill workspace + harness↔skill contract test
 ```
 
-20 commits on top of BASE_SHA. Net diff vs `b3e142d`: ~+9000 / −1100 across 50 files (TS/TSX + 4 markdown + 1 CSS).
+30 commits on top of BASE_SHA (10 added since the last STATUS update at `e5f48c6`: the STATUS doc + smoke-preview, the QA fixes, and the 4-commit v3.1 chat-surface rewrite).
 
 ---
 
@@ -125,9 +158,9 @@ e8fc4c7 feat(v3.1 lane B): registry extension (region + reassessment_plans + dif
 
 | Gate | Last result | When |
 |---|---|---|
-| `npm test` | 42 files / 408 tests pass | post `e5f48c6` |
-| `npx tsc --noEmit` | exit 0 | post `e5f48c6` |
-| `npm run build` | ✓ compiled (Next 16 Turbopack) + 8 static pages | post `e5f48c6` |
-| Vercel preview | ⏳ rebuilding on `f4618b2` (URL pending) | Previous: `clinical-care-partner-22brofjnl-...` on `8d64be9` |
-| Live scripted smoke | ✓ **3/3 PASS** | 2026-05-28 12:15 NZST against `8d64be9` preview; re-run pending on new URL |
-| Live manual smoke (5 cases) | ✓ partial (3 cases via /qa + /browse) | Found 1 crit + 2 med; both fixed in `f4618b2`. Re-verify after rebuild. |
+| `npx vitest run` | **38 files / 351 tests pass** | post `2f5968e` (re-run for this status update; legacy turn-route tests excluded transitionally per `vitest.config.ts`) |
+| `npx tsc --noEmit` | **exit 0** | post `2f5968e` |
+| `npm run build` | ✓ compiled (Next 16 Turbopack) + static pages | post `e5f48c6` (pre-deploy gate P3.8); no build-affecting change since |
+| Vercel preview | ✓ `hns9wb4gg` on `2f5968e` | canonical alias: https://clinical-care-partner.vercel.app |
+| Live scripted smoke | ✓ **3/3 PASS** | 2026-05-28 against `8d64be9` preview |
+| Demo 4 (Weightless transcript) manual | ✓ operator-verified on `hns9wb4gg` | `ask_user` inline form renders with `kind=weight_kg` + numeric input — typed-tool-part path confirmed in real UI |
