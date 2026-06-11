@@ -221,7 +221,8 @@ the same `lib/eval-cases.ts`, so they can never drift.
 The route runs `claude-opus-4-7` (overridable via the `CHAT_MODEL` env var). Cheaper models were
 evaluated for the swap on 2026-06-11 — a 3-model × 16-case × 3-pass matrix on the subscription
 harness plus a 16-case confirmation pass against the real route (raw transcripts + per-case
-reports: `evals/results/`):
+reports: `evals/results/` — the `*-regraded.*` files are authoritative; the `*-matrix-run.txt`
+logs are live printouts from earlier grader iterations, kept as raw run evidence):
 
 | Model | ok/48 | Dose numbers authored in prose |
 |---|---|---|
