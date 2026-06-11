@@ -1,0 +1,400 @@
+{
+  "harness": "api",
+  "runs": [
+    {
+      "caseId": "case-1-jack-nz",
+      "model": "claude-opus-4-7",
+      "pass": 1,
+      "ok": false,
+      "hardFails": [
+        "guideline source name in prose: \"Starship\""
+      ],
+      "softFails": [
+        "prose contains forbidden string: \"Starship\""
+      ],
+      "details": {
+        "hard:dose_or_citation_in_prose": "fail",
+        "tool:load_guideline": "pass",
+        "tool:calculate_dose": "pass",
+        "tool:get_reassessment_plan": "pass",
+        "tool_order:load_guideline_before_calculate_dose": "pass",
+        "tool_order:calculate_dose_before_get_reassessment_plan": "pass",
+        "prose_contains:moderate": "pass",
+        "prose_contains:oral": "pass",
+        "prose_contains:reassess": "pass",
+        "prose_does_not_contain:2.13": "pass",
+        "prose_does_not_contain:12 mg": "pass",
+        "prose_does_not_contain:Starship": "fail",
+        "prose_does_not_contain:starship.org.nz": "pass",
+        "prose_does_not_contain:120 minutes": "pass",
+        "prose_does_not_contain:2 hours": "pass",
+        "emits_dose_card": "pass",
+        "emits_reassessment_card": "pass",
+        "dose_card_field:tool_call_id": "skip",
+        "dose_card_field:drug": "skip",
+        "dose_card_field:route": "skip",
+        "dose_card_field:severity_row": "skip",
+        "dose_card_omits:dose_mg": "skip",
+        "dose_card_omits:dose_ml": "skip",
+        "dose_card_omits:max_mg": "skip",
+        "dose_card_omits:source_version": "skip",
+        "dose_card_omits:source_url": "skip",
+        "reassessment_card_field:tool_call_id": "skip"
+      }
+    },
+    {
+      "caseId": "case-5-out-of-scope",
+      "model": "claude-opus-4-7",
+      "pass": 1,
+      "ok": true,
+      "hardFails": [],
+      "softFails": [],
+      "details": {
+        "hard:dose_or_citation_in_prose": "pass",
+        "tool:calculate_dose -> out_of_scope OR load_guideline -> out_of_s": "pass",
+        "must_not_call:get_reassessment_plan": "pass",
+        "prose_contains:out_of_scope": "pass",
+        "prose_contains:croup": "pass",
+        "emits_dose_card": "pass",
+        "emits_reassessment_card": "pass",
+        "refusal": "pass",
+        "refusal_kind:out_of_scope": "pass"
+      }
+    }
+  ],
+  "transcripts": [
+    {
+      "caseId": "case-1-jack-nz",
+      "model": "claude-opus-4-7",
+      "pass": 1,
+      "prose": "I'll work through this case using the croup guideline.The note matches the moderate severity row cleanly (inspiratory stridor at rest, mild suprasternal/intercostal recession, alert and mildly distressed). Differential check is clean: clear URTI prodrome, no drooling/tripod/toxic appearance (against epiglottitis), no high fever or toxic features (against bacterial tracheitis), no choking history and symmetric chest (against foreign body), no allergen exposure or urticaria (against anaphylaxis).Assessment: 3-year-old with classic moderate viral croup — typical URTI prodrome, barky cough, hoarseness, inspiratory stridor at rest, mild recession, well-perfused and alert with SpO₂ 97%. No features pointing to epiglottitis, bacterial tracheitis, foreign body, or anaphylaxis on the must-not-miss differential. Severity is **moderate**.\n\nPlan: Single oral dose of dexamethasone per the Starship moderate-croup rule. Keep him calm on the parent's lap (avoid distressing examination), supportive care for the URTI, and observe in a monitored area through the post-steroid window. No nebulised adrenaline indicated at current severity.\n\nReassessment: At the scheduled review, focus on whether stridor at rest and recession are settling versus persisting or worsening, the trajectory of work of breathing and oxygenation, and mental state (agitation or unusual quietness are both concerning). Escalate immediately if any signs of severe disease emerge — do not wait for the scheduled review. Note the universal rail that moderate croup is not discharged overnight, so the disposition decision will need to account for time of day.",
+      "toolCalls": [
+        {
+          "name": "load_guideline",
+          "input": {
+            "condition": "croup",
+            "region": "NZ"
+          },
+          "output": {
+            "status": "ok",
+            "tool_call_id": "toolu_01XCCmCHcT9VYn86XmiWqJPW",
+            "guideline_id": "starship-croup-2020",
+            "condition": "croup",
+            "region": "NZ",
+            "source_section": "Croup — Corticosteroid treatment (dexamethasone dosing)",
+            "source_version": "Starship NZ Clinical Guideline, 2020",
+            "source_url": "https://www.starship.org.nz/guidelines/croup/",
+            "severity_rows": [
+              {
+                "label": "mild",
+                "description": "stridor only on exertion; no rest stridor; minimal recession; alert and calm",
+                "applies_to_dose_rule_id": "croup-dex-moderate"
+              },
+              {
+                "label": "moderate",
+                "description": "inspiratory stridor at rest; mild-to-moderate suprasternal or intercostal recession; alert, mildly distressed",
+                "applies_to_dose_rule_id": "croup-dex-moderate"
+              },
+              {
+                "label": "severe",
+                "description": "persistent stridor; severe recession with accessory muscle use; agitation trending to lethargy; hypoxia",
+                "applies_to_dose_rule_id": "croup-dex-severe"
+              },
+              {
+                "label": "impending_respiratory_failure",
+                "description": "stridor may diminish (ominous); exhausted; obtunded; severe hypoxia or cyanosis",
+                "applies_to_dose_rule_id": null
+              }
+            ],
+            "dose_rules": [
+              {
+                "dose_rule_id": "croup-dex-moderate",
+                "drug": "dexamethasone",
+                "mg_per_kg": 0.15,
+                "min_mg": null,
+                "max_mg": 12,
+                "route": "oral",
+                "frequency": "single dose",
+                "concentration_mg_per_ml": null,
+                "rounding": {
+                  "direction": "down",
+                  "increment_mg": 0.01
+                },
+                "source_section": "Croup — Corticosteroid treatment (dexamethasone dosing)",
+                "source_version": "Starship NZ Clinical Guideline, 2020",
+                "source_url": "https://www.starship.org.nz/guidelines/croup/",
+                "human_verified": true
+              },
+              {
+                "dose_rule_id": "croup-dex-severe",
+                "drug": "dexamethasone",
+                "mg_per_kg": 0.6,
+                "min_mg": null,
+                "max_mg": 12,
+                "route": "oral",
+                "frequency": "single dose",
+                "concentration_mg_per_ml": null,
+                "rounding": {
+                  "direction": "down",
+                  "increment_mg": 0.01
+                },
+                "source_section": "Croup — Corticosteroid treatment (dexamethasone dosing)",
+                "source_version": "Starship NZ Clinical Guideline, 2020",
+                "source_url": "https://www.starship.org.nz/guidelines/croup/",
+                "human_verified": true
+              }
+            ],
+            "differential_check": [
+              {
+                "condition": "epiglottitis",
+                "distinguishing_features": [
+                  "toxic appearance",
+                  "drooling",
+                  "tripod posturing",
+                  "muffled voice rather than barky cough",
+                  "no obvious URTI prodrome"
+                ],
+                "hazard_level": "must_not_miss"
+              },
+              {
+                "condition": "bacterial tracheitis",
+                "distinguishing_features": [
+                  "high fever",
+                  "toxic appearance",
+                  "poor response to nebulised adrenaline",
+                  "rapid progression of stridor",
+                  "purulent secretions on suction"
+                ],
+                "hazard_level": "must_not_miss"
+              },
+              {
+                "condition": "foreign body aspiration",
+                "distinguishing_features": [
+                  "sudden onset stridor without preceding URTI",
+                  "history of choking episode",
+                  "asymmetric breath sounds",
+                  "monophonic wheeze",
+                  "afebrile"
+                ],
+                "hazard_level": "must_not_miss"
+              },
+              {
+                "condition": "anaphylactic airway oedema",
+                "distinguishing_features": [
+                  "rapid onset after allergen exposure",
+                  "urticaria or angioedema",
+                  "wheeze with stridor",
+                  "hypotension or syncope",
+                  "GI symptoms in young children"
+                ],
+                "hazard_level": "must_not_miss"
+              }
+            ],
+            "reassessment_plans": [
+              {
+                "id": "croup-reassess-mild-moderate",
+                "applies_to_initial_severity": [
+                  "mild",
+                  "moderate"
+                ],
+                "applies_to_dose_rule_id": [
+                  "croup-dex-moderate"
+                ],
+                "reassess_in_minutes": 120,
+                "watch_for": [
+                  {
+                    "sign": "Persistent inspiratory stridor at rest",
+                    "severity_implication": "Indicates ongoing moderate"
+                  },
+                  {
+                    "sign": "Increased work of breathing",
+                    "severity_implication": "Possible escalation to severe"
+                  },
+                  {
+                    "sign": "Hypoxia (SpO2 < 92%)",
+                    "severity_implication": "Severe — re-route"
+                  },
+                  {
+                    "sign": "Agitation or lethargy",
+                    "severity_implication": "Impending failure"
+                  }
+                ],
+                "next_branches": [
+                  {
+                    "if_severity_at_reassessment": "mild",
+                    "action": "Discharge",
+                    "setting": "discharge",
+                    "escalate_to": null,
+                    "notes": "Not at night for moderate-on-initial"
+                  },
+                  {
+                    "if_severity_at_reassessment": "moderate",
+                    "action": "Review for another 2 hours, then discharge or admit",
+                    "setting": "short_stay",
+                    "escalate_to": null,
+                    "notes": ""
+                  },
+                  {
+                    "if_severity_at_reassessment": "severe",
+                    "action": "Give nebulised adrenaline and re-treat as severe",
+                    "setting": "continue_current",
+                    "escalate_to": null,
+                    "notes": ""
+                  }
+                ],
+                "universal_rails": [
+                  "Escalate at any point if clinical state worsens",
+                  "Moderate or severe croup is not discharged at night"
+                ]
+              },
+              {
+                "id": "croup-reassess-severe",
+                "applies_to_initial_severity": [
+                  "severe"
+                ],
+                "applies_to_dose_rule_id": [
+                  "croup-dex-severe"
+                ],
+                "reassess_in_minutes": 240,
+                "watch_for": [
+                  {
+                    "sign": "Number of nebulised adrenaline doses given",
+                    "severity_implication": "≥3 doses triggers PICU consult"
+                  },
+                  {
+                    "sign": "Response to adrenaline (sustained vs rebound)",
+                    "severity_implication": "Rebound at 4 h suggests bacterial tracheitis"
+                  },
+                  {
+                    "sign": "SpO2 trajectory",
+                    "severity_implication": "Sustained hypoxia → impending failure"
+                  }
+                ],
+                "next_branches": [
+                  {
+                    "if_severity_at_reassessment": "mild",
+                    "action": "Discharge if low risk AND mild symptoms 4 h post-second-adrenaline",
+                    "setting": "discharge",
+                    "escalate_to": null,
+                    "notes": ""
+                  },
+                  {
+                    "if_severity_at_reassessment": "moderate",
+                    "action": "Clinical short stay or admission depending on trajectory",
+                    "setting": "short_stay",
+                    "escalate_to": null,
+                    "notes": ""
+                  },
+                  {
+                    "if_severity_at_reassessment": "severe",
+                    "action": "Nebulised adrenaline as required; escalate per dose count",
+                    "setting": "ward",
+                    "escalate_to": "PICU consult at 3 doses; HDU/PICU at 4+",
+                    "notes": ""
+                  }
+                ],
+                "universal_rails": [
+                  "Escalate at any point if required",
+                  "IV access attempts may precipitate respiratory arrest — strongly consider gas induction if intubation required"
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "calculate_dose",
+          "input": {
+            "guideline_id": "starship-croup-2020",
+            "dose_rule_id": "croup-dex-moderate",
+            "weight_kg": 14.2
+          },
+          "output": {
+            "kind": "dose",
+            "dose_mg": 2.13,
+            "dose_ml": null,
+            "drug": "dexamethasone",
+            "route": "oral",
+            "frequency": "single dose",
+            "calculation_trace": "14.2 kg × 0.15 mg/kg = 2.13 mg (under 12 mg cap)",
+            "capped": false,
+            "binding_limit": null,
+            "data_gaps": [],
+            "tool_call_id": "toolu_01DEFyuq5nq6DJcaDTdoU3bD",
+            "severity_row": "moderate",
+            "max_mg": 12,
+            "source_version": "Starship NZ Clinical Guideline, 2020",
+            "source_url": "https://www.starship.org.nz/guidelines/croup/"
+          }
+        },
+        {
+          "name": "get_reassessment_plan",
+          "input": {
+            "guideline_id": "starship-croup-2020",
+            "dose_rule_id": "croup-dex-moderate",
+            "initial_severity": "moderate"
+          },
+          "output": {
+            "status": "ok",
+            "tool_call_id": "toolu_011wCuUPyGtmoziopgB3NPeB",
+            "guideline_id": "starship-croup-2020",
+            "initial_severity": "moderate",
+            "reassess_in_minutes": 120,
+            "watch_for": [
+              "Persistent inspiratory stridor at rest — Indicates ongoing moderate",
+              "Increased work of breathing — Possible escalation to severe",
+              "Hypoxia (SpO2 < 92%) — Severe — re-route",
+              "Agitation or lethargy — Impending failure"
+            ],
+            "next_branches": [
+              {
+                "if_severity_at_reassessment": "mild",
+                "then": "Discharge",
+                "escalate": false
+              },
+              {
+                "if_severity_at_reassessment": "moderate",
+                "then": "Review for another 2 hours, then discharge or admit",
+                "escalate": false
+              },
+              {
+                "if_severity_at_reassessment": "severe",
+                "then": "Give nebulised adrenaline and re-treat as severe",
+                "escalate": true
+              }
+            ],
+            "universal_rails": [
+              "Escalate at any point if clinical state worsens",
+              "Moderate or severe croup is not discharged at night"
+            ],
+            "source_version": "Starship NZ Clinical Guideline, 2020",
+            "source_url": "https://www.starship.org.nz/guidelines/croup/",
+            "trace": "Starship NZ Clinical Guideline, 2020 — initial moderate (rule croup-dex-moderate) → reassess at 120 min via plan \"croup-reassess-mild-moderate\"",
+            "watch_for_summary": "4 watch-for signs · 3 branch options",
+            "next_steps_summary": "Reassess at 120 min"
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "case-5-out-of-scope",
+      "model": "claude-opus-4-7",
+      "pass": 1,
+      "prose": "I'll check whether asthma is in scope for this skill.I cannot compute this dose: out_of_scope.\nThis skill currently supports paediatric croup only — asthma is not modelled in the current guideline registry.\nPlease use the relevant guideline-backed tool for paediatric asthma management (e.g. your local acute asthma pathway).",
+      "toolCalls": [
+        {
+          "name": "load_guideline",
+          "input": {
+            "condition": "asthma",
+            "region": "NZ"
+          },
+          "output": {
+            "status": "refusal",
+            "reason": "out_of_scope",
+            "message": "No guideline modelled for \"asthma\" in NZ. v3.1 covers croup only — other conditions are deferred.",
+            "tool_call_id": "toolu_01SLRvgnAXGWR3fUdT5iF5wn"
+          }
+        }
+      ]
+    }
+  ]
+}
