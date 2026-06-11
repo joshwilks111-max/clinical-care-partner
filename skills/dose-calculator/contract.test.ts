@@ -59,15 +59,15 @@ const CaseSchema = z
     region: z.string().optional(),
     prompt: z.string(),
     expected_tools: z.array(z.string()).optional(),
-    mock_tool_returns: z.record(z.unknown()).optional(),
+    mock_tool_returns: z.record(z.string(), z.unknown()).optional(),
     expected_output_shape: z
       .object({
         prose_contains: z.array(z.string()).optional(),
         prose_does_not_contain: z.array(z.string()).optional(),
         emits_dose_card: z.boolean().optional(),
         emits_reassessment_card: z.boolean().optional(),
-        dose_card_fields: z.record(z.unknown()).optional(),
-        reassessment_card_fields: z.record(z.unknown()).optional(),
+        dose_card_fields: z.record(z.string(), z.unknown()).optional(),
+        reassessment_card_fields: z.record(z.string(), z.unknown()).optional(),
         dose_card_omits: z.array(z.string()).optional(),
         refusal_kind: z.string().optional(),
       })
