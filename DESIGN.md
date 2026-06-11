@@ -7,7 +7,10 @@ the citations, the refusal taxonomy, and the deterministic dose math are unchang
 are tightened in *form*: every clinical number now flows through the registry, and the LLM's only
 job is judgement.
 
-Mode: take-home build, ~3.5 days against a Monday 5pm AEST deadline. One model: `claude-opus-4-7`.
+Mode: take-home build, ~3.5 days against a Monday 5pm AEST deadline. One model: `claude-opus-4-7`
+(re-validated 2026-06-11: sonnet-4-6/haiku-4-5 evaluated for a cost swap and rejected on eval
+evidence — both author dose numbers in prose, opus never did in 64 generations; README §5 +
+`evals/results/`. Cost handled via prompt caching instead).
 Stack: Next.js 16 + Vercel AI SDK 6 (`ai@6.0.191` + `@ai-sdk/anthropic@3.0.79`). Evidence base lives
 in `research/` (see end). Submit to `kieran@heidihealth.com`.
 
