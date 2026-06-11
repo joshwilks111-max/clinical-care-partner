@@ -187,10 +187,19 @@ and asserts the refusal-kind enum covers them). Doses are **identical every run*
 comes from the deterministic dose tool + Zod-structured output, not a temperature knob (opus-4-7
 takes none).
 
-**The behavioural eval set — 16 cases, run by an external harness.**
+**The behavioural eval set — 16 cases, two in-repo runners.**
+
+```bash
+npm run eval:sub   # Claude Agent SDK harness (runs on a Claude subscription, $0 API spend)
+npm run eval:api   # fidelity harness — POSTs cases to the real /api/chat of a running dev server
+```
 
 The end-to-end behaviour of the `/api/chat` tool loop is exercised by a 16-case set
-(`lib/eval-cases.ts`) driven through the user's harness with the tool returns mocked. Each case
+(`lib/eval-cases.ts`). The subscription runner replays cases through the Agent SDK with the
+app's real tool implementations (`lib/chat-tools.ts`) and per-case mocks injected; the API
+runner exercises the production route itself and is the ground truth. Both grade through the
+same pure `evals/grade.ts`, and `evals/regrade.ts` re-scores stored transcripts offline when
+grading semantics change — generation is expensive, grading is free. Each case
 fixes `expected_tools` + `mock_tool_returns` + an `expected_output_shape` whose core assertion is
 the safety thesis: `prose_does_not_contain` the dose number, the cap, or the citation — those live
 **only** in the typed DoseCard / ReassessmentCard, never in model prose. The set spans the dosing
@@ -206,6 +215,27 @@ the same `lib/eval-cases.ts`, so they can never drift.
 > The legacy Promptfoo harness (`promptfoo.yaml` + `tests/evals/*`) was **removed**: the v3.1
 > rewrite deleted the `turn1/turn2` routes and the `provider.ts` bridge it drove, so it could no
 > longer run. The 16-case set above is its successor, aimed at the single `/api/chat` route.
+
+### Model selection — measured, not assumed
+
+The route runs `claude-opus-4-7` (overridable via the `CHAT_MODEL` env var). Cheaper models were
+evaluated for the swap on 2026-06-11 — a 3-model × 16-case × 3-pass matrix on the subscription
+harness plus a 16-case confirmation pass against the real route (raw transcripts + per-case
+reports: `evals/results/`):
+
+| Model | ok/48 | Dose numbers authored in prose |
+|---|---|---|
+| **claude-opus-4-7** (kept) | 10 | **0 in 64 generations** (both harnesses) |
+| claude-sonnet-4-6 | 5 | 4 — incl. full markdown dose cards rendered in prose |
+| claude-haiku-4-5 | 7 | 6 — incl. the patient's actual dose ("**2.4 mg** orally") |
+
+The absolute pass rates are dominated by strict prose assertions every model misses (e.g. naming
+the guideline source in prose — opus does it too, on the live route). The **disqualifier** is the
+last column: Sonnet and Haiku both author dose values in prose, violating the one invariant this
+architecture exists to enforce. Opus never did. **Verdict: no swap.** The cost lever shipped
+instead is prompt caching — the stable prefix (tools + ~21 KB system prompt + region line) carries
+an Anthropic `cacheControl` breakpoint, measured at ~92% of input tokens billed as cache reads
+(0.1×) on a live multi-step turn.
 
 ---
 

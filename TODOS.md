@@ -14,7 +14,7 @@ Blast radius = a take-home demo, not a deployed clinical system. None is in v1 s
 
 | # | Deferred item | Trigger to build | Effort (human/CC) | Priority |
 |---|---|---|---|---|
-| 2 | **Model-tier routing** (big model judgment / light model execution) | Real traffic + a cost signal | M / S | P3 |
+| 2 | **Model-tier routing** (big model judgment / light model execution) | Real traffic + a cost signal. **Partially resolved 2026-06-11:** a full-model swap was evaluated (3 models × 16 cases × 3 passes, `evals/results/`) and rejected — sonnet-4-6/haiku-4-5 author dose numbers in prose (opus: 0/64). Prompt caching shipped instead (~92% of input as 0.1× cache reads). Per-tool routing remains open. | M / S | P3 |
 | 3 | **Deterministic severity mapping** (encode severity criteria as typed rules) | Regulatory hardening / scale beyond demo | L / M | P2 (next-sharpest beat) |
 | 5 | **LLM-as-judge eval (Layer 2)** clinically-framed applicability rubric | When faithfulness's blind spot needs measuring | M / S | P3 (hook left in tests/evals/; never gating) |
 | 6 | **Live-consult transcription + multi-round real-time collapse** (the multi-round version of the one-round collapse loop shipped in #4) | The 6-month product, not a 4-day build | XL / L | P3 |

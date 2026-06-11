@@ -4,7 +4,7 @@ Take-home assignment for a role at Heidi Health. Solo, private repo. Worked on t
 
 ## Tech stack
 
-Next.js 16 (App Router, Node runtime) + Vercel AI SDK 6 (`ai@6` + `@ai-sdk/anthropic@3`) on `claude-opus-4-7`. Tailwind v4 + shadcn/ui + Vercel AI Elements leaf components. Vitest is the test gate; behavioural evals are a 16-case set (`lib/eval-cases.ts`) run by an external harness — the in-repo Promptfoo suite was removed in v1.6.0.0. Deployed on Vercel. Node 22 (`.nvmrc`), npm (committed `package-lock.json`). Full rationale: [`DESIGN.md`](DESIGN.md) → "Stack — RESOLVED".
+Next.js 16 (App Router, Node runtime) + Vercel AI SDK 6 (`ai@6` + `@ai-sdk/anthropic@3`) on `claude-opus-4-7` (default; `CHAT_MODEL` env overrides — cheaper models were evaluated 2026-06-11 and rejected on safety-invariant evidence, see README §5). Prompt caching is on (cacheControl breakpoint on the system prefix). Tailwind v4 + shadcn/ui + Vercel AI Elements leaf components. Vitest is the test gate; behavioural evals are a 16-case set (`lib/eval-cases.ts`) with two in-repo runners (`npm run eval:sub` on subscription auth, `npm run eval:api` against a live dev server). Deployed on Vercel. Node 22 (`.nvmrc`), npm (committed `package-lock.json`). Full rationale: [`DESIGN.md`](DESIGN.md) → "Stack — RESOLVED".
 
 ## Commands
 
@@ -12,7 +12,8 @@ Next.js 16 (App Router, Node runtime) + Vercel AI SDK 6 (`ai@6` + `@ai-sdk/anthr
 |---|---|
 | Install | `npm install` |
 | Run / dev | `npm run dev` (http://localhost:3000) |
-| Test | `npx vitest run` (305 tests) · behavioural evals: 16-case set in `lib/eval-cases.ts`, run via external harness (no in-repo runner) |
+| Test | `npx vitest run` (355 tests) |
+| Behavioural evals | `npm run eval:sub -- --models <ids> --passes N --cases <ids>` (subscription, $0) · `npm run eval:api -- --label <id>` (real route; needs dev server + API key) · `npx tsx evals/regrade.ts <results.json>` re-scores stored transcripts |
 | Typecheck | `npx tsc --noEmit` |
 | Build | `npm run build` |
 | Deploy | auto on push to `main` (Vercel native git integration). Manual: `vercel deploy --prod` (live: https://clinical-care-partner.vercel.app). See README §4 for the full pipeline. |
