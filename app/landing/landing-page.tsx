@@ -4,8 +4,10 @@
 //
 // The submission landing page — the narrative front door served at
 // joshw-heidi-interview.space/. It walks the brief, tells the safety story, the
-// region-routing story, the proof, and the build journey, then sends the
-// reviewer into the live console at /demo. Same design language as the Bluey
+// region-routing story, the proof, and the build journey, then shows the full
+// trace inline via a static walkthrough (#preview). The live AI console (/demo,
+// /api/chat) was retired; its code remains in git history. Same design language
+// as the Bluey
 // console (cream/claret/amber, Source Serif headings) but self-contained: the
 // styles live in an injected <style> block so the hand-tuned CSS ports 1:1 from
 // the original static page with zero regression risk, and the interactive dose
@@ -342,8 +344,8 @@ export function LandingPage() {
             <a href="#proof">Proof</a>
             <a href="#design">Design</a>
           </nav>
-          <a className="top-cta" href="/demo">
-            Open the demo
+          <a className="top-cta" href="#preview">
+            See the walkthrough
           </a>
         </div>
       </div>
@@ -365,22 +367,23 @@ export function LandingPage() {
         </p>
 
         <div className="cta-row">
-          <a className="btn-pri" href="/demo">
-            Open the live demo
+          <a className="btn-pri" href="#preview">
+            See the walkthrough
           </a>
           <a className="btn-sec" href="#safety">
             How the safety works
           </a>
           <span className="cta-foot">
-            ~30 seconds &middot; paste a note &middot; see the trace
+            the whole trace &middot; shown step by step
           </span>
         </div>
 
         {/* live mini-product */}
         <div
           className="demo-wrap"
+          id="preview"
           role="region"
-          aria-label="Live dose calculator"
+          aria-label="Dose calculator walkthrough"
         >
           <div className="demo-grid">
             <div className="demo-card" aria-label="Clinical note">
@@ -650,9 +653,9 @@ URTI symptoms x 2 days. No prior dexamethasone.
                 &lt;10 min.&rdquo;
               </p>
               <p>
-                Live and deployed. The key is server-side, so there&rsquo;s
-                nothing to set up. <a href="/demo">Open the demo</a> and pick a
-                case.
+                Runnable locally in under ten minutes &mdash; the full build is
+                in the repo (<code>npm run dev</code>). The walkthrough above
+                runs every case, step by step.
               </p>
             </div>
           </div>
@@ -891,12 +894,11 @@ URTI symptoms x 2 days. No prior dexamethasone.
           <div>
             <h3>What&rsquo;s actually gating this.</h3>
             <p>
-              The live gate is the unit suite over <code>tools/</code>,{" "}
-              <code>registry/</code>, and <code>lib/</code>, the deterministic
-              safety spine, plus the <code>/api/chat</code> integration tests
-              and a live smoke on the deployed preview. Doses are identical
-              every run: there&rsquo;s no temperature, so determinism comes from
-              the tool plus Zod-structured output, not a sampling knob.
+              The gate is the unit suite over <code>tools/</code>,{" "}
+              <code>registry/</code>, and <code>lib/</code> &mdash; the
+              deterministic safety spine. Doses are identical every run:
+              there&rsquo;s no temperature, so determinism comes from the tool
+              plus Zod-structured output, not a sampling knob.
             </p>
             <ul>
               <li>
@@ -986,16 +988,16 @@ URTI symptoms x 2 days. No prior dexamethasone.
       {/* CLOSER */}
       <section className="wrap">
         <div className="closer">
-          <h2>Open the demo. Paste a note. Watch it work.</h2>
+          <h2>See it work, step by step.</h2>
           <p>
-            Five demo cases ship in the left rail: Jack T (NZ), Jack T (AU), Mia
-            R (?epiglottitis), a weightless transcript, and asthma
-            (out_of_scope). Pick one and you&rsquo;ll see the entire safety
-            story play in about ten seconds.
+            Five cases exercise the whole safety story: Jack T (NZ), Jack T
+            (AU), Mia R (?epiglottitis), a weightless transcript, and asthma
+            (out_of_scope) &mdash; each one rendered inline in the walkthrough
+            above.
           </p>
           <div className="cta-row" style={{ justifyContent: "center" }}>
-            <a className="btn-pri" href="/demo">
-              Open the live demo
+            <a className="btn-pri" href="#preview">
+              See the walkthrough
             </a>
           </div>
         </div>
